@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+env/
+.venv/
+backend/venv/
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# Flask instance folder
+instance/
+
+# Environment variables
+.env
+*.env
+
+# SQLite files
+*.sqlite3
+*.sqlite
+*.db
+
+# Logs
+logs/
+*.log
+
+# IDE/editor folders
+.vscode/
+.idea/
+
+# macOS / Windows system files
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# compiled python
+*.pyc
