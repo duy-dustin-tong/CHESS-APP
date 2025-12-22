@@ -35,7 +35,7 @@ class CreateNewGameWithFriend(Resource):
         white_user_id = data.get('white_user_id')
         black_user_id = data.get('black_user_id')
 
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         if user_id != white_user_id and user_id != black_user_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
 
@@ -76,8 +76,8 @@ class GameStatus(Resource):
 
         if not game:
             return {'message': 'Game not found'}, HTTPStatus.NOT_FOUND
-        
-        user_id = get_jwt_identity()
+
+        user_id = int(get_jwt_identity())
 
         if user_id != game.white_user_id and user_id != game.black_user_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
@@ -98,8 +98,8 @@ class MakeMove(Resource):
         
         if not game.in_progress:
             return {'message': 'Game has already ended'}, HTTPStatus.BAD_REQUEST
-        
-        user_id = get_jwt_identity()
+
+        user_id = int(get_jwt_identity())
         if user_id != game.white_user_id and user_id != game.black_user_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
         # Here you would add logic to validate and make the move
@@ -120,7 +120,7 @@ class Resign(Resource):
         game = Game.get_by_id(game_id)
         if not game:
             return {'message': 'Game not found'}, HTTPStatus.NOT_FOUND
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         if user_id != game.white_user_id and user_id != game.black_user_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
         

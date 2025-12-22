@@ -20,11 +20,12 @@ class MatchMaking(Resource):
     def post(self):
         """join the queue"""
 
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         #check if user is already in queue
+
         existing_entry = Queue.query.filter_by(user_id=user_id).first()
         if existing_entry:
-            return {'message': 'User already in queue'}, HTTPStatus.BAD_REQUEST
+            return {'message': f'User already in queue'}, HTTPStatus.BAD_REQUEST
 
         #check if user is already in a game
         ongoing_game = Game.query.filter(
@@ -72,7 +73,7 @@ class MatchMaking(Resource):
     @jwt_required()
     def delete(self):
         """leave the queue"""
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         existing_entry = Queue.query.filter_by(user_id=user_id).first()
         if not existing_entry:
             return {'message': 'User not in queue'}, HTTPStatus.BAD_REQUEST
@@ -85,7 +86,7 @@ class MatchStatus(Resource):
     @jwt_required()
     def get(self):
         """Check whether the current user has been paired into a game."""
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         # look for an in-progress game where the user is white or black
         game = Game.query.filter(
             (Game.white_user_id == user_id) | (Game.black_user_id == user_id)

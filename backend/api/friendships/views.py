@@ -26,7 +26,7 @@ class CreateAnEntry(Resource):
         user2_id = data.get('user2_id')
 
 
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         if current_user_id != user1_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
         
@@ -47,7 +47,7 @@ class UpdateDeleteEntry(Resource):
     def put(self, friendship_id):
         """accept a friend request"""
 
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         friendship = Friendship.get_by_id(friendship_id)
 
         if current_user_id != friendship.user2_id:
@@ -62,7 +62,7 @@ class UpdateDeleteEntry(Resource):
     @friendships_namespace.marshal_with(friendship_model)
     def delete(self, friendship_id):
         """reject or cancel a friend request"""
-        current_user_id = get_jwt_identity()
+        current_user_id = int(get_jwt_identity())
         friendship = Friendship.get_by_id(friendship_id)
 
         if current_user_id != friendship.user2_id:

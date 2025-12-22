@@ -9,10 +9,12 @@ from .utils import db
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from .models import users, games, friendships, userGames
+from flask_cors import CORS
 
 
 def create_app(config = config_dict['dev']):
     app = Flask(__name__)
+    CORS(app)
     app.config.from_object(config)
 
     api = Api(app)

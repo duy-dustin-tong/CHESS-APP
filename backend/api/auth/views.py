@@ -59,8 +59,8 @@ class LogIn(Resource):
         user = User.query.filter_by(email=email).first()
 
         if user is not None and check_password_hash(user.password_hash, password):
-            access_token = create_access_token(identity=user.id)
-            refresh_token = create_refresh_token(identity=user.id)
+            access_token = create_access_token(identity=str(user.id))
+            refresh_token = create_refresh_token(identity=str(user.id))
 
             return {
                 'access_token': access_token,
@@ -69,5 +69,25 @@ class LogIn(Resource):
             }, HTTPStatus.OK
         
         raise BadRequest("Invalid email or password.")
+    
+@auth_namespace.route('/refresh')
+class Refresh(Resource):
+
+    @jwt_required(refresh=True)
+    def post(self):
+        """ refreshes token"""
+        user_id=get_jwt_identity()
+
+        access_token = create_access_token(identity=user_id)
+        
+        try:
+            user = User.query.filter_by(id=int(user_id)).first()
+        except Exception:
+            raise BadRequest("User not found.")
+        
+        return {
+            "username": user.username,
+            "access_token": access_token,
+        }, HTTPStatus.OK
         
 
