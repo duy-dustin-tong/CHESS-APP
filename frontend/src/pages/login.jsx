@@ -19,12 +19,13 @@ export default function LogIn() {
     try {
       const response = await api.post(`/auth/login`, { email, password });
 
-      const { access_token, refresh_token, username } = response.data;
+      const { access_token, refresh_token, username, user_id } = response.data;
 
 
       localStorage.setItem('access_token', access_token);
       localStorage.setItem('refresh_token', refresh_token);
       localStorage.setItem('username', username);
+      localStorage.setItem('user_id', user_id);
 
 
       setMessage("Logged in!");

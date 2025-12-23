@@ -4,7 +4,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request
 from ..models.queue import Queue
 from ..models.games import Game
-from ..utils import db
+from ..utils import db, socketio
+from flask_socketio import join_room
 import threading
 
 # Simple process-local lock to serialize pairing operations.
@@ -13,6 +14,14 @@ import threading
 pair_lock = threading.Lock()
 
 matchmaking_namespace = Namespace('matchmaking', description = "matchmaking namespace")
+
+@socketio.on('register_user')
+def on_register(data):
+    user_id = data.get('userId')
+    if user_id:
+        room_name = f"user_{user_id}"
+        join_room(room_name)
+        print(f"Socket: User {user_id} joined room {room_name}")
 
 @matchmaking_namespace.route('/matchmaking')
 class MatchMaking(Resource):
@@ -45,7 +54,7 @@ class MatchMaking(Resource):
         with pair_lock:
             # fetch two earliest entries
             entries = Queue.query.order_by(Queue.created_at.asc()).limit(2).all()
-            if len(entries) == 2:
+            if len(entries) >= 2:
                 u1 = entries[0].user_id
                 u2 = entries[1].user_id
                 try:
@@ -57,7 +66,30 @@ class MatchMaking(Resource):
                         db.session.delete(e)
                     db.session.commit()
                     paired_game = game
+
+                    # --- SOCKET NOTIFICATION START ---
+                    
+                    # 1. Notify the WAITING user (u1)
+                    # They are sitting on the 'waiting' screen. This forces the redirect.
+                    socketio.emit('start_game', {
+                        'game_id': game.id,
+                        'opponent': u2,
+                        'color': 'white'
+                    }, to=f"user_{u1}")
+
+                    # 2. Notify the CURRENT user (u2)
+                    # Ideally, their HTTP response handles the redirect, but 
+                    # sending a socket event to them too ensures consistency 
+                    # (e.g., if they have multiple tabs open).
+                    socketio.emit('start_game', {
+                        'game_id': game.id,
+                        'opponent': u1,
+                        'color': 'black'
+                    }, to=f"user_{u2}")
+
+                    # --- SOCKET NOTIFICATION END ---
                 except Exception:
+                    print(f"Matchmaking Error: {e}")
                     db.session.rollback()
 
         if paired_game:

@@ -5,7 +5,7 @@ from .friendships.views import friendships_namespace
 from .games.views import games_namespace
 from .matchmaking.views import matchmaking_namespace
 from .config.config import config_dict
-from .utils import db
+from .utils import db, socketio
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from .models import users, games, friendships, userGames
@@ -25,6 +25,8 @@ def create_app(config = config_dict['dev']):
     api.add_namespace(matchmaking_namespace)
 
     db.init_app(app)
+    socketio.init_app(app)
+
     jwt = JWTManager(app)
     migrate = Migrate(app, db)
 

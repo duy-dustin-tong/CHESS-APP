@@ -65,7 +65,8 @@ class LogIn(Resource):
             return {
                 'access_token': access_token,
                 'refresh_token': refresh_token,
-                'username': user.username
+                'username': user.username,
+                'user_id': user.id
             }, HTTPStatus.OK
         
         raise BadRequest("Invalid email or password.")

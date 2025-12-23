@@ -16,6 +16,7 @@ export default function Home() {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         localStorage.removeItem('username');
+        localStorage.removeItem('user_id');
         
         setMessage("Logged out successfully.");
         setUsername(null);
@@ -27,6 +28,7 @@ export default function Home() {
             const response = await api.post('/matchmaking/matchmaking');
             if (response.data.message == "Paired") {
                 navigate(`/game/${response.data.game_id}`);
+                return;
             }
             setMessage(response.data.message);
             navigate('/waiting-room');
