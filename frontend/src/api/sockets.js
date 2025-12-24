@@ -1,3 +1,4 @@
+// frontend/src/api/sockets.js
 import { io } from 'socket.io-client';
 
 const SOCKET_URL = 'http://localhost:5000';

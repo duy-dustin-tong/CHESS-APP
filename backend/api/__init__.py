@@ -1,3 +1,4 @@
+# backend/api/__init__.py
 from flask import Flask
 from flask_restx import Api
 from .auth.views import auth_namespace

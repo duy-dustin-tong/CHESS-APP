@@ -1,3 +1,4 @@
+# backend/api/models/users.py
 from ..utils import db
 from sqlalchemy.dialects.postgresql import JSONB
 import json

@@ -1,3 +1,4 @@
+# backend/api/friendships/views.py
 from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask import request

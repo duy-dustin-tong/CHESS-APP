@@ -1,3 +1,4 @@
+// frontend/src/pages/waiting-room.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom"; 
 import socket from "../api/sockets";

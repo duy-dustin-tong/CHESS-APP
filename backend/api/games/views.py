@@ -1,9 +1,12 @@
+# backend/api/games/views.py
 from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request
 from ..models.games import Game
 from ..models.friendships import Friendship
+from ..utils import db, socketio
+import chess
 
 games_namespace = Namespace('games', description= "games namespace")
 
@@ -104,9 +107,52 @@ class MakeMove(Resource):
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
         # Here you would add logic to validate and make the move
         # For now, we just append the move to the moves list
+
+        board = chess.Board(game.current_fen) if game.current_fen else chess.Board()
+        current_turn_user_id = game.white_user_id if board.turn == chess.WHITE else game.black_user_id
+
+        if user_id != current_turn_user_id:
+            return {'message': "It is not your turn"}, HTTPStatus.FORBIDDEN
+        
+        # 3. Validate and Push Move
+        try:
+            # move is expected in UCI format like "e2e4"
+            chess_move = chess.Move.from_uci(move)
+            if chess_move in board.legal_moves:
+                board.push(chess_move)
+            else:
+                return {'message': 'Illegal move'}, HTTPStatus.BAD_REQUEST
+        except ValueError:
+            return {'message': 'Invalid move format (use UCI)'}, HTTPStatus.BAD_REQUEST
+        
+        # 4. Update Game Object
+        game.current_fen = board.fen()
+
         if game.moves:
             game.moves += f" {move}"
+        else:
+            game.moves = move
+
+        # 5. Check for Game End (Checkmate/Draw)
+        if board.is_game_over():
+            game.in_progress = False
+            if board.is_checkmate():
+                # The winner is the one who just moved
+                game.winner_id = user_id
+            # Draw logic can be added here (winner_id remains null)
+
         game.save()
+
+        # 6. Socket Emit
+        # We send the FEN and the UCI move to the game room
+        socketio.emit('move_made', {
+            'move': move,
+            'current_fen': game.current_fen,
+            'is_game_over': not game.in_progress,
+            'winner_id': getattr(game, 'winner_id', None)
+        }, to=f"game_{game_id}")
+
+
         return game, HTTPStatus.OK
 
 @games_namespace.route('/games/<int:game_id>/resign')
@@ -120,6 +166,9 @@ class Resign(Resource):
         game = Game.get_by_id(game_id)
         if not game:
             return {'message': 'Game not found'}, HTTPStatus.NOT_FOUND
+        if not game.in_progress:
+            return {'message': 'Game has already ended'}, HTTPStatus.BAD_REQUEST
+        
         user_id = int(get_jwt_identity())
         if user_id != game.white_user_id and user_id != game.black_user_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
@@ -128,6 +177,12 @@ class Resign(Resource):
 
         game.in_progress = False
         game.save()
+
+        socketio.emit('game_over', {
+            'winner_id': game.winner_id,
+            'reason': 'resignation'
+        }, to=f"game_{game_id}")
+
         return game, HTTPStatus.OK
 
         

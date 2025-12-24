@@ -1,3 +1,4 @@
+# backend/api/matchmaking/views.py
 from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -22,6 +23,14 @@ def on_register(data):
         room_name = f"user_{user_id}"
         join_room(room_name)
         print(f"Socket: User {user_id} joined room {room_name}")
+
+@socketio.on('join_game')
+def on_join_game(data):
+    game_id = data.get('gameId')
+    if game_id:
+        room_name = f"game_{game_id}"
+        join_room(room_name)
+        print(f"Socket: Player joined shared room {room_name}")
 
 @matchmaking_namespace.route('/matchmaking')
 class MatchMaking(Resource):
@@ -88,7 +97,7 @@ class MatchMaking(Resource):
                     }, to=f"user_{u2}")
 
                     # --- SOCKET NOTIFICATION END ---
-                except Exception:
+                except Exception as e:
                     print(f"Matchmaking Error: {e}")
                     db.session.rollback()
 

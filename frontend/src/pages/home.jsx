@@ -1,6 +1,8 @@
+// frontend/src/pages/home.jsx
 import { useState, useEffect } from 'react';
 import api from '../api/api';
 import { Link, useNavigate } from 'react-router-dom';
+import socket from '../api/sockets';
 
 
 export default function Home() {
@@ -27,6 +29,7 @@ export default function Home() {
             setMessage("Joining matchmaking queue...");
             const response = await api.post('/matchmaking/matchmaking');
             if (response.data.message == "Paired") {
+
                 navigate(`/game/${response.data.game_id}`);
                 return;
             }
