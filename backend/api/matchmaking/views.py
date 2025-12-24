@@ -6,7 +6,6 @@ from flask import request
 from ..models.queue import Queue
 from ..models.games import Game
 from ..utils import db, socketio
-from flask_socketio import join_room
 import threading
 
 # Simple process-local lock to serialize pairing operations.
@@ -16,21 +15,7 @@ pair_lock = threading.Lock()
 
 matchmaking_namespace = Namespace('matchmaking', description = "matchmaking namespace")
 
-@socketio.on('register_user')
-def on_register(data):
-    user_id = data.get('userId')
-    if user_id:
-        room_name = f"user_{user_id}"
-        join_room(room_name)
-        print(f"Socket: User {user_id} joined room {room_name}")
 
-@socketio.on('join_game')
-def on_join_game(data):
-    game_id = data.get('gameId')
-    if game_id:
-        room_name = f"game_{game_id}"
-        join_room(room_name)
-        print(f"Socket: Player joined shared room {room_name}")
 
 @matchmaking_namespace.route('/matchmaking')
 class MatchMaking(Resource):

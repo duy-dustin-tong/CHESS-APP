@@ -26,6 +26,10 @@ game_model = games_namespace.model('Game', {
     'updated_at': fields.DateTime(description='Game last update timestamp'),
 })
 
+draw_response_model = games_namespace.model('DrawResponse', {
+    'accept': fields.Boolean(required=True, description='Accept or reject the draw offer'),
+})
+
 @games_namespace.route('/games')
 class CreateNewGameWithFriend(Resource):
 
@@ -108,6 +112,8 @@ class MakeMove(Resource):
         # Here you would add logic to validate and make the move
         # For now, we just append the move to the moves list
 
+        game.draw_offer_from = None  # Clear any existing draw offers on move
+
         board = chess.Board(game.current_fen) if game.current_fen else chess.Board()
         current_turn_user_id = game.white_user_id if board.turn == chess.WHITE else game.black_user_id
 
@@ -153,7 +159,19 @@ class MakeMove(Resource):
         }, to=f"game_{game_id}")
 
 
-        return game, HTTPStatus.OK
+        # ADD THIS: Explicitly emit game_over if the board is done
+        if not game.in_progress:
+            reason = "draw"
+            if board.is_checkmate():
+                reason = "checkmate"
+            
+            socketio.emit('game_over', {
+                'winner_id': game.winner_id,
+                'reason': reason
+            }, to=f"game_{game_id}")
+
+
+            return game, HTTPStatus.OK
 
 @games_namespace.route('/games/<int:game_id>/resign')
 class Resign(Resource):
@@ -176,6 +194,7 @@ class Resign(Resource):
         game.winner_id = game.black_user_id if user_id == game.white_user_id else game.white_user_id
 
         game.in_progress = False
+        game.win_by_resignation = True
         game.save()
 
         socketio.emit('game_over', {
@@ -185,5 +204,68 @@ class Resign(Resource):
 
         return game, HTTPStatus.OK
 
+@games_namespace.route('/games/<int:game_id>/offer-draw')
+class OfferDraw(Resource):
+
+    @jwt_required()
+    def post(self, game_id):
+        """offer a draw"""
+
+        user_id = int(get_jwt_identity())
+
+        game = Game.get_by_id(game_id)
+        if not game:
+            return {'message': 'Game not found'}, HTTPStatus.NOT_FOUND
+        if not game.in_progress:
+            return {'message': 'Game has already ended'}, HTTPStatus.BAD_REQUEST
+
+        game.draw_offer_from = user_id
+        game.save()
+
+        socketio.emit('draw_offered', {
+            'offerer_id': user_id
+        }, to=f"game_{game_id}")
+
+        return {'message': 'Draw offer sent'}, HTTPStatus.OK
+    
+@games_namespace.route('/games/<int:game_id>/respond-draw')
+class RespondDraw(Resource):
+
+    @jwt_required()
+    @games_namespace.expect(draw_response_model)
+    @games_namespace.marshal_with(game_model)
+    def post(self, game_id):
+        """accept a draw"""
+
+        data = request.get_json()
+        accepted = data.get('accepted')
+
+        game = Game.get_by_id(game_id)
+        if not game:
+            return {'message': 'Game not found'}, HTTPStatus.NOT_FOUND
+        if not game.in_progress:
+            return {'message': 'Game has already ended'}, HTTPStatus.BAD_REQUEST
+        
+        user_id = int(get_jwt_identity())
+        if (user_id != game.white_user_id and user_id != game.black_user_id) or game.draw_offer_from == user_id:
+            return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
         
 
+        
+        if not accepted:
+            game.draw_offer_from = None
+            game.save()
+            socketio.emit('draw_declined', {}, to=f"game_{game_id}")
+            return {'message': 'Draw declined'}, HTTPStatus.OK
+        
+        game.in_progress = False
+        game.winner_id = None  # Draw
+
+        game.save()
+
+        socketio.emit('game_over', {
+            'winner_id': None,
+            'reason': 'draw_agreement'
+        }, to=f"game_{game_id}")
+
+        return game, HTTPStatus.OK

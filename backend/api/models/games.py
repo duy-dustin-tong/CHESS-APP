@@ -19,6 +19,8 @@ class Game(db.Model):
     black_user_id = db.Column(db.Integer(), db.ForeignKey('users.id'), nullable=False, index=True)
 
     winner_id = db.Column(db.Integer(), db.ForeignKey('users.id'), default=None, nullable=True, index=True)
+    draw_offer_from = db.Column(db.Integer(), nullable=True, default=None)
+    win_by_resignation = db.Column(db.Boolean(), default=False)
 
     created_at = db.Column(db.DateTime(), default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime(), default=datetime.utcnow, index=True)

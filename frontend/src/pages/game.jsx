@@ -5,20 +5,28 @@ import api from "../api/api";
 import socket from "../api/sockets";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
+import { useNavigate } from "react-router-dom";
 
 export default function Game() {
   const { gameId } = useParams();
   const [whiteId, setWhiteId] = useState("");
   const [blackId, setBlackId] = useState("");
   const [myUserId, setMyUserId] = useState(localStorage.getItem("user_id"));
+  const [pendingPromotion, setPendingPromotion] = useState(null);
+  // Will store: { from: 'a7', to: 'a8', color: 'w' }
+
+  const [drawOfferedBy, setDrawOfferedBy] = useState(null); 
 
   const chessGameRef = useRef(new Chess());
   const chessGame = chessGameRef.current;
+  const boardOrientation = myUserId === blackId ? "black" : "white";
 
   // track the current position of the chess game in state to trigger a re-render of the chessboard
   const [chessPosition, setChessPosition] = useState(chessGame.fen());
   const [moveFrom, setMoveFrom] = useState('');
   const [optionSquares, setOptionSquares] = useState({});
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Join the game room
@@ -34,12 +42,36 @@ export default function Game() {
     });
 
     socket.on("game_over", (data) => {
+
+      if(data.reason === "resignation") {
+        alert(`Game Over! Player ${data.winner_id} wins by resignation.`);
+      } else
       alert(`Game Over! Winner: ${data.winner_id || "Draw"}`);
+
+      socket.emit("leave_game", { gameId });
+      navigate("/")
+    });
+
+    socket.on("draw_offered", (data) => {
+      console.log("Draw offered by:", typeof data.offerer_id);
+      console.log("My user ID:", typeof myUserId);
+
+      if (data.offerer_id !== parseInt(myUserId)) {
+        setDrawOfferedBy(data.offerer_id);
+      }
+    });
+
+    socket.on("draw_declined", () => {
+      alert("Draw offer declined.");
+      setDrawOfferedBy(null);
     });
 
     return () => {
+      socket.emit("leave_game", { gameId });
       socket.off("move_made");
       socket.off("game_over");
+      socket.off("draw_offered");
+      socket.off("draw_declined");
     };
   }, [gameId]);
 
@@ -77,6 +109,37 @@ export default function Game() {
       const response = await api.get(`/games/games/${gameId}`);
       chessGame.load(response.data.current_fen);
       setChessPosition(chessGame.fen());
+    }
+  };
+
+  const handleResign = async () => {
+    if (window.confirm("Are you sure you want to resign?")) {
+      try {
+        await api.post(`/games/games/${gameId}/resign`);
+        // Note: We don't need to manually update state here because 
+        // the backend will emit a 'game_over' socket event.
+      } catch (error) {
+        console.error("Error resigning:", error);
+        alert("Could not process resignation.");
+      }
+    }
+  };
+
+  const offerDraw = async () => {
+    try {
+      await api.post(`/games/games/${gameId}/offer-draw`);
+      alert("Draw offer sent.");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const respondToDraw = async (accepted) => {
+    try {
+      await api.post(`/games/games/${gameId}/respond-draw`, { accepted });
+      setDrawOfferedBy(null);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -162,6 +225,16 @@ export default function Game() {
       return;
     }
 
+    // Detect if this move is a promotion (chess.js flags it)
+    if (foundMove.promotion) {
+      setPendingPromotion({
+        from: moveFrom,
+        to: square,
+        color: turn, // 'w' or 'b'
+      });
+      return; // STOP here. Wait for user to select piece in the UI.
+    }
+
     // is normal move
     try {
       chessGame.move({
@@ -192,71 +265,116 @@ export default function Game() {
     setOptionSquares({});
   }
 
-  // handle piece drop
-  function onPieceDrop({
-    sourceSquare,
-    targetSquare
-  }) {
 
+  const finalizePromotion = (promotionPiece) => {
+    if (!pendingPromotion) return;
 
-    // Basic turn check: Don't allow moving if it's not your turn
-    const turn = chessGame.turn(); // 'w' or 'b'
-    if ((turn === 'w' && myUserId !== whiteId) || (turn === 'b' && myUserId !== blackId)) {
-      return false;
-    }
-
-
-    // type narrow targetSquare potentially being null (e.g. if dropped off board)
-    if (!targetSquare) {
-      return false;
-    }
-
-    // try to make the move according to chess.js logic
     try {
       chessGame.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: 'q' // always promote to a queen for example simplicity
+        from: pendingPromotion.from,
+        to: pendingPromotion.to,
+        promotion: promotionPiece, // 'q', 'r', 'b', or 'n'
       });
 
-      // update the position state upon successful move to trigger a re-render of the chessboard
+      // Update board
       setChessPosition(chessGame.fen());
 
-      // send the move to the backend in UCI format
-      const moveUCI = sourceSquare + targetSquare + (chessGame.get(targetSquare)?.type === 'p' && (targetSquare[1] === '8' || targetSquare[1] === '1') ? 'q' : '');
-      submitMove(moveUCI);  
-
-      // clear moveFrom and optionSquares
+      // Send to backend (e.g., "a7a8q")
+      submitMove(pendingPromotion.from + pendingPromotion.to + promotionPiece);
+      
+      // Cleanup
+      setPendingPromotion(null);
       setMoveFrom('');
       setOptionSquares({});
-
-
-
-      // return true as the move was successful
-      return true;
-    } catch {
-      // return false as the move was not successful
-      return false;
+    } catch (error) {
+      console.error("Promotion failed:", error);
+      setPendingPromotion(null); // Cancel move on error
     }
-  }
+  };
 
   // set the chessboard options
   const chessboardOptions = {
-    onPieceDrop,
+
     onSquareClick,
     position: chessPosition,
     squareStyles: optionSquares,
-    id: 'click-or-drag-to-move'
+    boardOrientation: boardOrientation,
+    id: 'click-to-move',
   };
 
 
   return (
     <div>
       <h1>Game ID: {gameId}</h1>
-        <p>White Player ID: {whiteId}</p>
-        <p>Black Player ID: {blackId}</p>
+      <p>White Player ID: {whiteId}</p>
+      <p>Black Player ID: {blackId}</p>
 
-        <Chessboard options={chessboardOptions} />
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <button onClick={handleResign} style={{ background: 'red', color: 'white' }}>Resign</button>
+        <button onClick={offerDraw}>Offer Draw</button>
+      </div>
+
+      {/* DRAW OFFER NOTIFICATION */}
+      {drawOfferedBy && (
+        <div style={{
+          background: '#fff3cd',
+          padding: '15px',
+          border: '1px solid #ffeeba',
+          borderRadius: '4px',
+          margin: '10px 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <span>Opponent offered a draw.</span>
+          <div>
+            <button onClick={() => respondToDraw(true)} style={{ marginRight: '5px', background: 'green', color: 'white' }}>Accept</button>
+            <button onClick={() => respondToDraw(false)} style={{ background: 'gray', color: 'white' }}>Decline</button>
+          </div>
+        </div>
+      )}
+
+      <Chessboard options={chessboardOptions} />
+
+
+      {/* CUSTOM PROMOTION MODAL */}
+      {pendingPromotion && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'rgba(255,255,255,0.9)',
+          padding: '20px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+          zIndex: 100,
+          display: 'flex',
+          gap: '10px'
+        }}>
+          <p style={{ width: '100%', textAlign: 'center', marginBottom: '10px' }}>Promote to:</p>
+          {['q', 'r', 'b', 'n'].map((p) => (
+            <button
+              key={p}
+              onClick={() => finalizePromotion(p)}
+              style={{
+                padding: '10px',
+                cursor: 'pointer',
+                fontSize: '24px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                background: 'white'
+              }}
+            >
+              {/* Simple unicode pieces or text */}
+              {pendingPromotion.color === 'w' 
+                ? { q: '♕', r: '♖', b: '♗', n: '♘' }[p] 
+                : { q: '♛', r: '♜', b: '♝', n: '♞' }[p]
+              }
+            </button>
+          ))}
+        </div>
+      )}
 
     </div>
   )
