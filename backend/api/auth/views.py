@@ -2,6 +2,7 @@
 from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from ..models.users import User
+from ..models.elo import EloEntry
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import Conflict, BadRequest
@@ -43,7 +44,11 @@ class SignUp(Resource):
                 email=data['email'],
                 password_hash=generate_password_hash(data['password'])
             )
+            new_elo_entry = EloEntry(
+                user_id=new_user.id
+            )
             new_user.save()
+            new_elo_entry.save()
             return new_user, HTTPStatus.CREATED
         except Exception as e:
             raise Conflict("User with provided email or username already exists.")

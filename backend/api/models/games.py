@@ -12,7 +12,6 @@ class Game(db.Model):
     __tablename__ = 'games'
     id = db.Column(db.Integer(), primary_key=True, index=True)
     in_progress = db.Column(db.Boolean(), default=True, index=True)
-    moves = db.Column(db.Text, nullable=False, default="")
     current_fen = db.Column(db.String(100), nullable=False, default='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
 
     white_user_id = db.Column(db.Integer(), db.ForeignKey('users.id'), nullable=False, index=True)

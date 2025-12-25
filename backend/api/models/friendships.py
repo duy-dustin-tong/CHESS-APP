@@ -1,6 +1,5 @@
 # backend/api/models/friendships.py
 from ..utils import db
-from sqlalchemy.dialects.postgresql import JSONB
 import json
 from datetime import datetime
 from enum import Enum

@@ -5,7 +5,10 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request
 from ..models.games import Game
 from ..models.friendships import Friendship
+from ..models.moves import Move
+from ..models.elo import EloEntry
 from ..utils import db, socketio
+from ..utils.eloChange import calculate_new_elo_pair_after_draw, calculate_new_elo_pair_after_win
 import chess
 
 games_namespace = Namespace('games', description= "games namespace")
@@ -134,18 +137,47 @@ class MakeMove(Resource):
         # 4. Update Game Object
         game.current_fen = board.fen()
 
-        if game.moves:
-            game.moves += f" {move}"
-        else:
-            game.moves = move
+        new_move = Move(
+            game_id=game.id,
+            move_number=len(Move.get_moves_by_game_id(game.id)) + 1,
+            uci=move
+        )
+
+        new_move.save()
+
 
         # 5. Check for Game End (Checkmate/Draw)
         if board.is_game_over():
             game.in_progress = False
+
+            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
+            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first() 
+            new_elos = None
+
+
             if board.is_checkmate():
                 # The winner is the one who just moved
                 game.winner_id = user_id
-            # Draw logic can be added here (winner_id remains null)
+                new_elos = calculate_new_elo_pair_after_win(black_elo_entry.rating, white_elo_entry.rating, game.winner_id == game.black_user_id)
+            else:
+                # Draw
+                game.winner_id = None
+                new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.rating, white_elo_entry.rating)
+            
+            new_black_elo = EloEntry(
+                user_id=game.black_user_id,
+                game_id=game.id,
+                rating=new_elos[0]
+            )
+
+            new_white_elo = EloEntry(
+                user_id=game.white_user_id,
+                game_id=game.id,
+                rating=new_elos[1]
+            )
+
+            new_black_elo.save()
+            new_white_elo.save()
 
         game.save()
 
@@ -195,7 +227,26 @@ class Resign(Resource):
 
         game.in_progress = False
         game.win_by_resignation = True
+
+        # Update Elo Ratings
+        black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
+        white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+        new_elos = calculate_new_elo_pair_after_win(black_elo_entry.rating, white_elo_entry.rating, game.winner_id == game.black_user_id)
+
+        new_black_elo = EloEntry(
+            user_id=game.black_user_id,
+            game_id=game.id,
+            rating=new_elos[0]
+        )
+        new_white_elo = EloEntry(
+            user_id=game.white_user_id,
+            game_id=game.id,
+            rating=new_elos[1]
+        )
+
         game.save()
+        new_black_elo.save()
+        new_white_elo.save()
 
         socketio.emit('game_over', {
             'winner_id': game.winner_id,
@@ -261,7 +312,25 @@ class RespondDraw(Resource):
         game.in_progress = False
         game.winner_id = None  # Draw
 
+        black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
+        white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+
+        new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.rating, white_elo_entry.rating)
+
+        new_black_elo = EloEntry(
+            user_id=game.black_user_id,
+            game_id=game.id,
+            rating=new_elos[0]
+        )
+
+        new_white_elo = EloEntry(
+            user_id=game.white_user_id,
+            game_id=game.id,
+            rating=new_elos[1]
+        )
         game.save()
+        new_black_elo.save()
+        new_white_elo.save()
 
         socketio.emit('game_over', {
             'winner_id': None,
