@@ -28,9 +28,6 @@ export default function WaitingRoom() {
 
     const myUserId = localStorage.getItem("user_id");
 
-    if (myUserId) {
-      socket.emit("register_user", { userId: myUserId });
-    }
 
     socket.on("start_game", (data) => {
       setMessage("Match found! Redirecting to game...");

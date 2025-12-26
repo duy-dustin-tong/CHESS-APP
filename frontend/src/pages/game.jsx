@@ -12,6 +12,7 @@ export default function Game() {
   const [whiteId, setWhiteId] = useState("");
   const [blackId, setBlackId] = useState("");
   const [myUserId, setMyUserId] = useState(localStorage.getItem("user_id"));
+  const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [pendingPromotion, setPendingPromotion] = useState(null);
   // Will store: { from: 'a7', to: 'a8', color: 'w' }
 
@@ -109,6 +110,22 @@ export default function Game() {
       const response = await api.get(`/games/games/${gameId}`);
       chessGame.load(response.data.current_fen);
       setChessPosition(chessGame.fen());
+    }
+  };
+
+  const handleAddFriend = async () => {
+    const opponentId = myUserId === whiteId ? blackId : whiteId;
+    
+    try {
+        await api.post('/friendships/friendships', {
+            user1_id: myUserId,
+            user2_id: opponentId
+        });
+        setFriendRequestSent(true);
+        alert("Friend request sent!");
+    } catch (error) {
+        console.error("Error sending friend request:", error);
+        alert(error.response?.data?.message || "Failed to send request.");
     }
   };
 
@@ -302,12 +319,30 @@ export default function Game() {
     id: 'click-to-move',
   };
 
-
+  const opponentId = myUserId === whiteId ? blackId : whiteId;
+  
   return (
     <div>
       <h1>Game ID: {gameId}</h1>
       <p>White Player ID: {whiteId}</p>
       <p>Black Player ID: {blackId}</p>
+
+      {!friendRequestSent && myUserId !== opponentId && (
+        <button 
+          onClick={handleAddFriend}
+          style={{
+            padding: '5px 10px',
+            fontSize: '0.8rem',
+            backgroundColor: '#007bff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          ➕ Add Friend
+        </button>
+      )}
 
       <div style={{ display: 'flex', gap: '10px' }}>
         <button onClick={handleResign} style={{ background: 'red', color: 'white' }}>Resign</button>

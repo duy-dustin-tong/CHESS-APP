@@ -44,10 +44,11 @@ class SignUp(Resource):
                 email=data['email'],
                 password_hash=generate_password_hash(data['password'])
             )
+            new_user.save()
+
             new_elo_entry = EloEntry(
                 user_id=new_user.id
             )
-            new_user.save()
             new_elo_entry.save()
             return new_user, HTTPStatus.CREATED
         except Exception as e:

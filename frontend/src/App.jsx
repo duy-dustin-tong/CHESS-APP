@@ -5,6 +5,7 @@ import LogIn from './pages/login.jsx';
 import Home from './pages/home.jsx';
 import Game from './pages/game.jsx';
 import WaitingRoom from './pages/waiting-room.jsx';
+import FriendsList from './pages/friends-list.jsx';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/game/:gameId" element={<Game />} />
         <Route path="/waiting-room" element={<WaitingRoom />} />
+        <Route path="/friends-list" element={<FriendsList />} />
       </Routes>
     </Router>
   );

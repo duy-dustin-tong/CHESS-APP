@@ -3,14 +3,13 @@ from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from ..models.friendships import Friendship
+from ..models.friendships import Friendship, FriendshipStatus
 
 friendships_namespace = Namespace('friendships', description = "friendship namespace")
 
 friendship_model = friendships_namespace.model('Friendship', {
     'user1_id': fields.Integer(required=True, description='User 1 ID'),
     'user2_id': fields.Integer(required=True, description='User 2 ID'),
-    'status': fields.String(required=False, description='Friendship status', enum=['pending', 'accepted', 'rejected']),
 })
 
 
@@ -30,7 +29,16 @@ class CreateAnEntry(Resource):
         current_user_id = int(get_jwt_identity())
         if current_user_id != user1_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
-        
+
+        # Check if a friendship already exists
+        existing_friendship = Friendship.query.filter(
+            ((Friendship.user1_id == user1_id) & (Friendship.user2_id == user2_id)) |
+            ((Friendship.user1_id == user2_id) & (Friendship.user2_id == user1_id))
+        ).first()
+
+        if existing_friendship:
+            return {'message': 'You are already friends or the other user sent you a friend request first'}, HTTPStatus.BAD_REQUEST
+
         # Logic to create a friendship entry goes here
         entry = Friendship(
             user1_id=user1_id, 
@@ -54,7 +62,7 @@ class UpdateDeleteEntry(Resource):
         if current_user_id != friendship.user2_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
 
-        friendship.status = 'accepted'
+        friendship.status = FriendshipStatus.ACCEPTED
         friendship.save()
 
         return friendship, HTTPStatus.OK
@@ -69,7 +77,7 @@ class UpdateDeleteEntry(Resource):
         if current_user_id != friendship.user2_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
 
-        friendship.status = 'rejected'
+        friendship.status = FriendshipStatus.REJECTED
         friendship.delete()
 
-        return friendship, HTTPStatus.GONE
+        return friendship, HTTPStatus.OK

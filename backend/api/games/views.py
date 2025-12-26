@@ -227,24 +227,27 @@ class Resign(Resource):
 
         game.in_progress = False
         game.win_by_resignation = True
+        game.save()
 
         # Update Elo Ratings
         black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
         white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
-        new_elos = calculate_new_elo_pair_after_win(black_elo_entry.rating, white_elo_entry.rating, game.winner_id == game.black_user_id)
+        new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)
+
+        
 
         new_black_elo = EloEntry(
             user_id=game.black_user_id,
             game_id=game.id,
-            rating=new_elos[0]
+            elo=new_elos[0]
         )
         new_white_elo = EloEntry(
             user_id=game.white_user_id,
             game_id=game.id,
-            rating=new_elos[1]
+            elo=new_elos[1]
         )
 
-        game.save()
+        
         new_black_elo.save()
         new_white_elo.save()
 
@@ -311,24 +314,25 @@ class RespondDraw(Resource):
         
         game.in_progress = False
         game.winner_id = None  # Draw
+        game.save()
 
         black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
         white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
 
-        new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.rating, white_elo_entry.rating)
+        new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.elo, white_elo_entry.elo)
 
         new_black_elo = EloEntry(
             user_id=game.black_user_id,
             game_id=game.id,
-            rating=new_elos[0]
+            elo=new_elos[0]
         )
 
         new_white_elo = EloEntry(
             user_id=game.white_user_id,
             game_id=game.id,
-            rating=new_elos[1]
+            elo=new_elos[1]
         )
-        game.save()
+        
         new_black_elo.save()
         new_white_elo.save()
 

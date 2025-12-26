@@ -1,6 +1,7 @@
 // frontend/src/pages/login.jsx
 import { useState } from 'react';
 import api from '../api/api';
+import socket from '../api/sockets';
 import { Link, useNavigate } from 'react-router-dom';
 
 
@@ -28,6 +29,9 @@ export default function LogIn() {
       localStorage.setItem('username', username);
       localStorage.setItem('user_id', user_id);
 
+      
+      socket.emit("register_user", { userId: user_id});
+      
 
       setMessage("Logged in!");
       navigate('/');

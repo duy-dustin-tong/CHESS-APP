@@ -5,6 +5,7 @@ from .auth.views import auth_namespace
 from .friendships.views import friendships_namespace
 from .games.views import games_namespace
 from .matchmaking.views import matchmaking_namespace
+from .users.views import users_namespace
 from .config.config import config_dict
 from .utils import db, socketio
 from flask_jwt_extended import JWTManager
@@ -24,6 +25,7 @@ def create_app(config = config_dict['dev']):
     api.add_namespace(friendships_namespace)
     api.add_namespace(games_namespace)
     api.add_namespace(matchmaking_namespace)
+    api.add_namespace(users_namespace)
 
     db.init_app(app)
     socketio.init_app(app)
