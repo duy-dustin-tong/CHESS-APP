@@ -30,7 +30,7 @@ export default function LogIn() {
       localStorage.setItem('user_id', user_id);
 
       
-      socket.emit("register_user", { userId: user_id});
+      
       
 
       setMessage("Logged in!");

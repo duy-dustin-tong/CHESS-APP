@@ -14,6 +14,15 @@ def on_register(data):
         join_room(room_name)
         print(f"Socket: User {user_id} joined room {room_name}")
 
+@socketio.on('deregister_user')
+def on_deregister(data):
+    user_id = data.get('userId')
+    if user_id:
+        room_name = f"user_{user_id}"
+        leave_room(room_name)
+        print(f"Socket: User {user_id} left room {room_name}")
+
+
 @socketio.on('join_game')
 def on_join_game(data):
     game_id = data.get('gameId')

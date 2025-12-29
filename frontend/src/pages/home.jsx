@@ -1,7 +1,8 @@
 // frontend/src/pages/home.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, } from 'react';
 import api from '../api/api';
 import { Link, useNavigate } from 'react-router-dom';
+import socket from '../api/sockets';
 
 
 
@@ -11,10 +12,21 @@ export default function Home() {
     const [message, setMessage] = useState('');
     const [myUserId, setMyUserId] = useState(parseInt(localStorage.getItem('user_id')));
     const [friendRequests, setFriendRequests] = useState([]);
+    const [challenges, setChallenges] = useState([]);
+
+
 
     const navigate = useNavigate();
 
 
+    const fetchPendingChallenges = async () => {
+        try {
+            const response = await api.get('/challenges/challenges/pending');
+            setChallenges(response.data);
+        } catch (error) {
+            console.error("Error fetching challenges:", error);
+        }
+    };
 
     // 1. FETCH PENDING REQUESTS
     const fetchFriendRequests = async () => {
@@ -30,6 +42,26 @@ export default function Home() {
 
          
     };
+
+    const respondChallenge = async (challengeId, responseType) => {
+        try {
+            const res = await api.post(`/challenges/respond_challenge/${challengeId}/${responseType}`);
+            
+            // Remove from state immediately
+            setChallenges(prev => prev.filter(c => c.challenge_id !== challengeId));
+
+            if (responseType === 'accept' && res.data.game_id) {
+                navigate(`/game/${res.data.game_id}`);
+            }
+        } catch (error) {
+            setMessage(error.response?.data?.message || "Action failed");
+            // If 404 (expired/deleted), remove it from list
+            if (error.response?.status === 404) {
+                 setChallenges(prev => prev.filter(c => c.challenge_id !== challengeId));
+            }
+        }
+    };
+
 
     // 2. ACCEPT REQUEST (PUT)
     const acceptRequest = async (requestId) => {
@@ -64,6 +96,8 @@ export default function Home() {
         
         setMessage("Logged out successfully.");
         setUsername(null);
+
+        socket.emit("deregister_user", { userId: myUserId });
     };
 
     const seeFriends = () => {
@@ -94,9 +128,33 @@ export default function Home() {
         if (storedUsername) {
             setUsername(storedUsername);
             setMyUserId(parseInt(localStorage.getItem('user_id')));
+            socket.emit("register_user", { userId: myUserId});
             fetchFriendRequests();
-        }   
+            fetchPendingChallenges();
+        }
+
     }, []);
+
+    useEffect(() => {
+        socket.on('friend_challenge_invite', (data) => {
+            console.log("New Challenge received:", data);
+            
+            // Add new challenge to list (prevent duplicates just in case)
+            setChallenges(prev => {
+                if (prev.some(c => c.challenge_id === data.challenge_id)) return prev;
+                return [...prev, data];
+            });
+        });
+
+        socket.on('start_challenge', (data) => {
+            navigate(`/game/${data.game_id}`);
+        });
+
+        return () => {
+            socket.off('friend_challenge_invite');
+            socket.off('start_challenge');
+        };
+    },[]);
     
     return (
         <div>
@@ -118,6 +176,46 @@ export default function Home() {
             <div>
                 {username && <button onClick={seeFriends}> see friends list</button>}
             </div>
+
+
+            {/* --- CHALLENGES UI --- */}
+            {username && challenges.length > 0 && (
+                <div style={{ marginTop: '20px', border: '2px solid gold', padding: '15px', borderRadius: '8px', backgroundColor: '#fffbe6' }}>
+                    <h3 style={{margin: '0 0 10px 0'}}>⚔️ Game Invites</h3>
+                    
+                    <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {challenges.map((c) => (
+                            <li key={c.challenge_id} style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center', 
+                                marginBottom: '10px', 
+                                padding: '10px', 
+                                background: 'white',
+                                border: '1px solid #ddd' 
+                            }}>
+                                <span>
+                                    <strong>{c.username}</strong> has challenged you to a game!
+                                </span>
+                                <div>
+                                    <button 
+                                        onClick={() => respondChallenge(c.challenge_id, 'accept')} 
+                                        style={{ backgroundColor: '#4CAF50', color: 'white', border:'none', padding: '8px 12px', marginRight: '5px', cursor: 'pointer' }}
+                                    >
+                                        Accept
+                                    </button>
+                                    <button 
+                                        onClick={() => respondChallenge(c.challenge_id, 'decline')} 
+                                        style={{ backgroundColor: '#f44336', color: 'white', border:'none', padding: '8px 12px', cursor: 'pointer' }}
+                                    >
+                                        Decline
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
 
             {/* 4. PENDING REQUESTS UI */}

@@ -6,6 +6,7 @@ import api from "../api/api";
 
 export default function WaitingRoom() {
   const [message, setMessage] = useState("Waiting for an opponent to join...");
+  const [myUserId, setMyUserId] = useState(parseInt(localStorage.getItem('user_id')));
   const navigate = useNavigate();  
   
   
@@ -25,10 +26,6 @@ export default function WaitingRoom() {
   };
 
   useEffect(() => {
-
-    const myUserId = localStorage.getItem("user_id");
-
-
     socket.on("start_game", (data) => {
       setMessage("Match found! Redirecting to game...");
       // Small delay or check to prevent double navigation 
@@ -42,6 +39,13 @@ export default function WaitingRoom() {
       socket.off("start_game");
     };
   },[navigate]);
+
+  useEffect(() => {
+    if(myUserId){
+      socket.emit("register_user", { userId: myUserId});
+    } 
+
+  }, []);
 
   
 

@@ -3,20 +3,19 @@ from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request
+
+from ..models.users import User
 from ..models.games import Game
-from ..models.friendships import Friendship
+from ..models.friendships import Friendship, FriendshipStatus
 from ..models.moves import Move
 from ..models.elo import EloEntry
+from ..models.challenges import Challenge
 from ..utils import db, socketio
 from ..utils.eloChange import calculate_new_elo_pair_after_draw, calculate_new_elo_pair_after_win
 import chess
 
 games_namespace = Namespace('games', description= "games namespace")
 
-game_start_model = games_namespace.model('GameStart', {
-    'white_user_id': fields.Integer(required=True, description='White Player User ID'),     
-    'black_user_id': fields.Integer(required=True, description='Black Player User ID'),
-})
 
 game_model = games_namespace.model('Game', {
     'id': fields.Integer(description='Game ID'),
@@ -32,47 +31,6 @@ game_model = games_namespace.model('Game', {
 draw_response_model = games_namespace.model('DrawResponse', {
     'accept': fields.Boolean(required=True, description='Accept or reject the draw offer'),
 })
-
-@games_namespace.route('/games')
-class CreateNewGameWithFriend(Resource):
-
-    @games_namespace.expect(game_start_model)
-    @games_namespace.marshal_with(game_model)
-    @jwt_required()
-    def post(self):
-        """create a new game with a friend"""
-        data = request.get_json()
-        white_user_id = data.get('white_user_id')
-        black_user_id = data.get('black_user_id')
-
-        user_id = int(get_jwt_identity())
-        if user_id != white_user_id and user_id != black_user_id:
-            return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
-
-        friend_id = black_user_id if user_id == white_user_id else white_user_id
-        friendship_status = Friendship.query.filter(
-            ((Friendship.user1_id == user_id) & (Friendship.user2_id == friend_id)) |
-            ((Friendship.user1_id == friend_id) & (Friendship.user2_id == user_id))
-        ).first()
-
-        if not friendship_status or friendship_status.status != 'accepted':
-            return {'message': 'You are not friends with this user'}, HTTPStatus.BAD_REQUEST
-        
-        #check if friend is in another game
-        ongoing_game = Game.query.filter(
-            ((Game.white_user_id == friend_id) | (Game.black_user_id == friend_id) | (Game.white_user_id == user_id) | (Game.black_user_id == user_id)) &
-            (Game.in_progress == True)
-        ).first()
-
-        if ongoing_game:
-            return {'message': 'You or friend is already in an ongoing game'}, HTTPStatus.BAD_REQUEST
-
-        new_game = Game(
-            white_user_id=white_user_id,
-            black_user_id=black_user_id
-        )
-        new_game.save()
-        return new_game, HTTPStatus.CREATED
 
 
 @games_namespace.route('/games/<int:game_id>')
@@ -158,22 +116,22 @@ class MakeMove(Resource):
             if board.is_checkmate():
                 # The winner is the one who just moved
                 game.winner_id = user_id
-                new_elos = calculate_new_elo_pair_after_win(black_elo_entry.rating, white_elo_entry.rating, game.winner_id == game.black_user_id)
+                new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)
             else:
                 # Draw
                 game.winner_id = None
-                new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.rating, white_elo_entry.rating)
+                new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.elo, white_elo_entry.elo)
             
             new_black_elo = EloEntry(
                 user_id=game.black_user_id,
                 game_id=game.id,
-                rating=new_elos[0]
+                elo=new_elos[0]
             )
 
             new_white_elo = EloEntry(
                 user_id=game.white_user_id,
                 game_id=game.id,
-                rating=new_elos[1]
+                elo=new_elos[1]
             )
 
             new_black_elo.save()
@@ -229,7 +187,7 @@ class Resign(Resource):
         game.win_by_resignation = True
         game.save()
 
-        # Update Elo Ratings
+        # Update Elo elos
         black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
         white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
         new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)

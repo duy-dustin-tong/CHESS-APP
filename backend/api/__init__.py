@@ -11,6 +11,7 @@ from .utils import db, socketio
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from .models import users, games, friendships, userGames
+from .challenges.views import challenge_namespace
 from flask_cors import CORS
 
 
@@ -26,6 +27,7 @@ def create_app(config = config_dict['dev']):
     api.add_namespace(games_namespace)
     api.add_namespace(matchmaking_namespace)
     api.add_namespace(users_namespace)
+    api.add_namespace(challenge_namespace)
 
     db.init_app(app)
     socketio.init_app(app)
@@ -36,11 +38,7 @@ def create_app(config = config_dict['dev']):
     @app.shell_context_processor
     def make_shell_context():
         return{
-            'db': db,
-            'User': users.User,
-            'Game': games.Game,
-            'Friendship': friendships.Friendship,
-            'UserGames': userGames.UserGame
+            'db': db
         }
 
     return app
