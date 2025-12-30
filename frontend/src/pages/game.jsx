@@ -6,6 +6,7 @@ import socket from "../api/sockets";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { useNavigate } from "react-router-dom";
+import GameControls from '../components/GameControls';
 
 export default function Game() {
   const { gameId } = useParams();
@@ -122,10 +123,10 @@ export default function Game() {
             user2_id: opponentId
         });
         setFriendRequestSent(true);
-        alert("Friend request sent!");
+      return { ok: true };
     } catch (error) {
         console.error("Error sending friend request:", error);
-        alert(error.response?.data?.message || "Failed to send request.");
+      return { ok: false, message: error.response?.data?.message || "Failed to send request." };
     }
   };
 
@@ -327,47 +328,18 @@ export default function Game() {
       <p>White Player ID: {whiteId}</p>
       <p>Black Player ID: {blackId}</p>
 
-      {!friendRequestSent && myUserId !== opponentId && (
-        <button 
-          onClick={handleAddFriend}
-          style={{
-            padding: '5px 10px',
-            fontSize: '0.8rem',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          ➕ Add Friend
-        </button>
-      )}
 
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <button onClick={handleResign} style={{ background: 'red', color: 'white' }}>Resign</button>
-        <button onClick={offerDraw}>Offer Draw</button>
-      </div>
-
-      {/* DRAW OFFER NOTIFICATION */}
-      {drawOfferedBy && (
-        <div style={{
-          background: '#fff3cd',
-          padding: '15px',
-          border: '1px solid #ffeeba',
-          borderRadius: '4px',
-          margin: '10px 0',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <span>Opponent offered a draw.</span>
-          <div>
-            <button onClick={() => respondToDraw(true)} style={{ marginRight: '5px', background: 'green', color: 'white' }}>Accept</button>
-            <button onClick={() => respondToDraw(false)} style={{ background: 'gray', color: 'white' }}>Decline</button>
-          </div>
-        </div>
-      )}
+      <GameControls
+        onResign={handleResign}
+        onOfferDraw={offerDraw}
+        onAddFriend={handleAddFriend}
+        drawOfferedBy={drawOfferedBy}
+        respondToDraw={respondToDraw}
+        friendRequestSent={friendRequestSent}
+        myUserId={myUserId}
+        opponentId={opponentId}
+        statusMessage={null}
+      />
 
       <Chessboard options={chessboardOptions} />
 

@@ -1,12 +1,20 @@
 // frontend/src/pages/friends-list.jsx
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api/api';
 import socket from '../api/sockets';
 import { useNavigate } from 'react-router-dom';
+import Button from '../components/Button';
+import StatusMessage from '../components/StatusMessage';
+import UserListItem from '../components/UserListItem';
+import ChallengeItem from '../components/ChallengeItem';
+import useChallengeActions from '../hooks/useChallengeActions';
+import ListShell from '../components/ListShell';
+
 
 export default function FriendsList() {
     const [friends, setFriends] = useState([]);
+    const [challengesState, setChallengesState] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusMessage, setStatusMessage] = useState('');
     const [waitingChallenge, setWaitingChallenge] = useState(false);
@@ -61,6 +69,15 @@ export default function FriendsList() {
         }
     };
 
+    // use hook for challenges (keeps socket listeners centralized)
+    const handleStart = useCallback((data) => navigate(`/game/${data.game_id}`), [navigate]);
+    const { challenges, acceptChallenge, declineChallenge, setChallenges } = useChallengeActions(myUserId, handleStart);
+
+    // keep a local alias for compatibility with existing variable names
+    useEffect(() => {
+      setChallengesState(challenges);
+    }, [challenges]);
+
 
 
     useEffect(() => {
@@ -84,14 +101,8 @@ export default function FriendsList() {
 
     useEffect(() => {
 
-
-        socket.on('start_challenge', (data) => {
-            navigate(`/game/${data.game_id}`);
-        });
-
-        return () => {
-            socket.off('start_challenge');
-        };
+        // challenge socket listeners handled by useChallenges hook
+        return () => {};
     },[]);
 
     return (
@@ -99,15 +110,20 @@ export default function FriendsList() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 
                 <h1>My Friends</h1>
-                <button 
-                    onClick={backToHome}
-                    style={{ padding: '8px 16px', cursor: 'pointer' }}
-                >
-                    Back to Home
-                </button>
+                <Button onClick={backToHome} style={{ padding: '8px 16px' }}>Back to Home</Button>
             </div>
 
             <hr />
+
+                        <ListShell title="⚔️ Game Invites" emptyMessage="No game invites." loading={false}>
+                            {challengesState.length > 0 && (
+                                <ul style={{ listStyle: 'none', padding: 0 }}>
+                                                                        {challengesState.map((c) => (
+                                        <ChallengeItem key={c.challenge_id} challenge={c} onAccept={async (id) => { try { const res = await acceptChallenge(id); if (res?.data?.game_id) navigate(`/game/${res.data.game_id}`); } catch (err) { setStatusMessage(err.response?.data?.message || 'Failed to accept challenge'); } }} onDecline={async (id) => { try { await declineChallenge(id); } catch (err) { setStatusMessage('Failed to decline challenge'); } }} />
+                                    ))}
+                                </ul>
+                            )}
+                        </ListShell>
 
             {loading ? (
                 <p>Loading friends...</p>
@@ -116,50 +132,14 @@ export default function FriendsList() {
             ) : (
                 <ul style={{ listStyle: 'none', padding: 0 }}>
                     {friends.map((friend) => (
-                        <li key={friend.id} style={{ 
-                            padding: '15px', borderBottom: '1px solid #ddd',
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                        }}>
-                            <div>
-                                <strong style={{ fontSize: '1.1em' }}>{friend.username}</strong>
-                                <div style={{ color: '#666' }}>Elo: {friend.elo}</div>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                                {/* Challenge Buttons */}
-                                <div style={{ display: 'flex', border: '1px solid #ccc', borderRadius: '4px', overflow: 'hidden' }}>
-                                    <button 
-                                        onClick={() => sendChallenge(friend.id)}
-                                        style={{ padding: '8px 12px', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
-                                        title="Challenge"
-                                    >
-                                        Challenge
-                                    </button>
-                                    
-                                </div>
-
-                                {/* Remove Button */}
-                                <button 
-                                    onClick={() => removeFriend(friend.id)}
-                                    style={{ padding: '8px', color: '#dc3545', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2em' }}
-                                    title="Remove Friend"
-                                >
-                                    🗑️
-                                </button>
-                            </div>
-                        </li>
+                        <UserListItem key={friend.id} user={friend} showElo actions={[{ label: 'Challenge', variant: 'plain', onClick: () => sendChallenge(friend.id) }, { label: '🗑️', variant: 'plain', onClick: () => removeFriend(friend.id) }]} />
                     ))}
                 </ul>
             )}
             {waitingChallenge && 
-                <button 
-                    onClick={cancelChallenge}
-                    style={{ padding: '8px 16px', cursor: 'pointer', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}
-                >
-                    Cancel Challenge
-                </button>
+                <Button variant="danger" onClick={cancelChallenge}>Cancel Challenge</Button>
             }
-            {statusMessage && <p style={{ marginTop: '20px', color: '#007bff' }}>{statusMessage}</p>}
+            <StatusMessage message={statusMessage} />
         </div>
     );
 }
