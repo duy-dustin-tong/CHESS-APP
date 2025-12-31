@@ -16,12 +16,12 @@ export default function Profile() {
     const { userId } = useParams();
     const navigate = useNavigate();
     const [user, setUser] = useState(null);
-    const [friends, setFriends] = useState([]);
-    const [myFriends, setMyFriends] = useState([]);
     const [commonFriends, setCommonFriends] = useState([]);
-    const [history, setHistory] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    const { items: friends, loading: friendsLoading, error: friendsError, hasMore: friendsHasMore, loadMore: loadMoreFriends } = usePaginatedFetch(`/users/users/${userId}/friends`, { pageSize: 10, params: {} });
+
+    const { items: history, loading: historyLoading, error: historyError, hasMore: historyHasMore, loadMore: loadMoreHistory } = usePaginatedFetch(`/users/users/${userId}/history`, { pageSize: 10, params: {} });
     const [friendRequestSent, setFriendRequestSent] = useState(false);
     const [friendRequestLoading, setFriendRequestLoading] = useState(false);
 
@@ -29,49 +29,29 @@ export default function Profile() {
 
     useEffect(() => {
         let cancelled = false;
-        const fetchAll = async () => {
-            setLoading(true);
+        const fetchUserAndViewer = async () => {
             setError(null);
-            try {
-            const endpoints = [
-                api.get(`/users/users/${userId}`),
-                api.get(`/users/users/${userId}/friends`),
-                api.get(`/users/users/${userId}/history`),
-            ];
+                try {
+                    const userRes = await api.get(`/users/users/${userId}`);
+                    if (cancelled) return;
+                    setUser(userRes.data);
 
-            if (viewerId) endpoints.push(api.get(`/users/users/${viewerId}/friends`));
-            const results = await Promise.all(endpoints);
-
-            const userRes = results[0].data;
-            const friendsRes = results[1].data || [];
-            const historyRes = results[2].data || [];
-            const myFriendsRes = viewerId ? results[3].data || [] : [];
-
-            if (cancelled) return;
-
-            setUser(userRes);
-            setFriends(friendsRes);
-            setHistory(historyRes);
-            setMyFriends(myFriendsRes);
-
-            // compute common friends by id
-            if (viewerId) {
-                const myIds = new Set(myFriendsRes.map((f) => f.id));
-                const common = friendsRes.filter((f) => myIds.has(f.id));
-                setCommonFriends(common);
-            } else {
-                setCommonFriends([]);
-            }
+                    if (viewerId) {
+                        const myFriendsRes = await api.get(`/users/users/${viewerId}/friends`);
+                        const myIds = new Set((myFriendsRes.data || []).map((f) => f.id));
+                        const common = friends.filter((f) => myIds.has(f.id));
+                        setCommonFriends(common);
+                    } else {
+                        setCommonFriends([]);
+                    }
             } catch (err) {
                 setError(err.response?.data?.message || 'Failed to load profile');
-            } finally {
-                setLoading(false);
             }
         };
 
-        fetchAll();
+        fetchUserAndViewer();
         return () => { cancelled = true; };
-    }, [userId, viewerId]);
+    }, [userId, viewerId, friends]);
 
     const displayElo = (val) => {
         if (val == null) return 'N/A';
@@ -79,12 +59,15 @@ export default function Profile() {
         return val;
     };
 
+    const loading = friendsLoading || historyLoading;
+
     return (
     <div>
         <h1>Profile</h1>
 
         <div style={{ marginBottom: 12 }}>
         <Button onClick={() => navigate(-1)}>Back</Button>
+        <Button onClick={() => navigate('/')} style={{ marginLeft: 8 }}>Home</Button>
         {viewerId === parseInt(userId) && (
             <Button onClick={() => navigate('/edit-account')} style={{ marginLeft: 8 }}>Edit Account</Button>
         )}
@@ -126,6 +109,8 @@ export default function Profile() {
             <div style={{ flex: 1 }}>
             <h3>Game History</h3>
             <ListShell emptyMessage="No games.">
+                {historyLoading && <p>Loading history...</p>}
+                {historyError && <div style={{ color: 'red' }}>{String(historyError)}</div>}
                 <ul style={{ listStyle: 'none', padding: 0 }}>
                 {history.map((g) => (
                     <li key={g.id} style={{ marginBottom: 10, border: '1px solid #eee', padding: 8, borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -140,17 +125,21 @@ export default function Profile() {
                     </li>
                 ))}
                 </ul>
+                {historyHasMore && <Button onClick={loadMoreHistory}>Load more</Button>}
             </ListShell>
             </div>
 
             <div style={{ width: 320 }}>
             <h3>Friends</h3>
             <ListShell emptyMessage="No friends.">
+                {friendsLoading && <p>Loading friends...</p>}
+                {friendsError && <div style={{ color: 'red' }}>{String(friendsError)}</div>}
                 <ul style={{ listStyle: 'none', padding: 0 }}>
                 {friends.map((f) => (
                     <UserListItem key={f.id} user={f} showElo />
                 ))}
                 </ul>
+                {friendsHasMore && <Button onClick={loadMoreFriends}>Load more</Button>}
             </ListShell>
 
             {userId != viewerId && <>

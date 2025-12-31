@@ -10,16 +10,16 @@ import UserListItem from '../components/UserListItem';
 import ChallengeItem from '../components/ChallengeItem';
 import useChallengeActions from '../hooks/useChallengeActions';
 import ListShell from '../components/ListShell';
+import usePaginatedFetch from '../hooks/usePaginatedFetch';
 
 
 export default function FriendsList() {
-    const [friends, setFriends] = useState([]);
     const [challengesState, setChallengesState] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [statusMessage, setStatusMessage] = useState('');
-    const [waitingChallenge, setWaitingChallenge] = useState(false);
     const myUserId = parseInt(localStorage.getItem('user_id'));
     const navigate = useNavigate();
+    const { items: friends, loading, error, hasMore, loadMore, refresh } = usePaginatedFetch(`/users/users/${myUserId}/friends`, { pageSize: 20, params: {} });
+    const [statusMessage, setStatusMessage] = useState('');
+    const [waitingChallenge, setWaitingChallenge] = useState(false);
 
 
     const sendChallenge = async (friendId) => {
@@ -47,9 +47,10 @@ export default function FriendsList() {
             // This assumes your friendship delete endpoint uses the user IDs
             // Replace with your specific friendship ID logic if needed
             await api.delete(`/friendships/friendships/${friendId}`); 
-            setFriends(prev => prev.filter(f => f.id !== friendId));
+            // refresh paginated list
+            refresh();
         } catch (error) {
-            alert("Failed to remove friend");
+            alert(error?.response?.data?.message || "Failed to remove friend");
         }
     };
 
@@ -71,7 +72,7 @@ export default function FriendsList() {
 
     // use hook for challenges (keeps socket listeners centralized)
     const handleStart = useCallback((data) => navigate(`/game/${data.game_id}`), [navigate]);
-    const { challenges, acceptChallenge, declineChallenge, setChallenges } = useChallengeActions(myUserId, handleStart);
+    const { challenges, acceptChallenge, declineChallenge } = useChallengeActions(myUserId, handleStart);
 
     // keep a local alias for compatibility with existing variable names
     useEffect(() => {
@@ -81,22 +82,7 @@ export default function FriendsList() {
 
 
     useEffect(() => {
-        const fetchFriends = async () => {
-            try {
-                // Calling your existing GET /users/<id>/friends endpoint
-                const response = await api.get(`/users/users/${myUserId}/friends`);
-                setFriends(response.data);
-            } catch (error) {
-                console.error("Error fetching friends:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (myUserId) {
-            socket.emit("register_user", { userId: myUserId});
-            fetchFriends();
-        }
+        if (myUserId) socket.emit('register_user', { userId: myUserId });
     }, [myUserId]);
 
     useEffect(() => {
@@ -119,23 +105,21 @@ export default function FriendsList() {
                             {challengesState.length > 0 && (
                                 <ul style={{ listStyle: 'none', padding: 0 }}>
                                                                         {challengesState.map((c) => (
-                                        <ChallengeItem key={c.challenge_id} challenge={c} onAccept={async (id) => { try { const res = await acceptChallenge(id); if (res?.data?.game_id) navigate(`/game/${res.data.game_id}`); } catch (err) { setStatusMessage(err.response?.data?.message || 'Failed to accept challenge'); } }} onDecline={async (id) => { try { await declineChallenge(id); } catch (err) { setStatusMessage('Failed to decline challenge'); } }} />
-                                    ))}
+                                                                        <ChallengeItem key={c.challenge_id} challenge={c} onAccept={async (id) => { try { const res = await acceptChallenge(id); if (res?.data?.game_id) navigate(`/game/${res.data.game_id}`); } catch (err) { setStatusMessage(err.response?.data?.message || 'Failed to accept challenge'); } }} onDecline={async (id) => { try { await declineChallenge(id); } catch { setStatusMessage('Failed to decline challenge'); } }} />
+                                                                    ))}
                                 </ul>
                             )}
                         </ListShell>
 
-            {loading ? (
-                <p>Loading friends...</p>
-            ) : friends.length === 0 ? (
-                <p>You haven't added any friends yet.</p>
-            ) : (
-                <ul style={{ listStyle: 'none', padding: 0 }}>
-                    {friends.map((friend) => (
-                        <UserListItem key={friend.id} user={friend} showElo actions={[{ label: 'Challenge', variant: 'plain', onClick: () => sendChallenge(friend.id) }, { label: '🗑️', variant: 'plain', onClick: () => removeFriend(friend.id) }]} />
-                    ))}
-                </ul>
-            )}
+            {loading && <p>Loading friends...</p>}
+            {error && <div style={{ color: 'red' }}>{String(error)}</div>}
+            {!loading && friends.length === 0 && <p>You haven't added any friends yet.</p>}
+            <ul style={{ listStyle: 'none', padding: 0 }}>
+                {friends.map((friend) => (
+                    <UserListItem key={friend.id} user={friend} showElo actions={[{ label: 'Challenge', variant: 'plain', onClick: () => sendChallenge(friend.id) }, { label: '🗑️', variant: 'plain', onClick: () => removeFriend(friend.id) }]} />
+                ))}
+            </ul>
+            {hasMore && <Button onClick={loadMore}>Load more</Button>}
             {waitingChallenge && 
                 <Button variant="danger" onClick={cancelChallenge}>Cancel Challenge</Button>
             }

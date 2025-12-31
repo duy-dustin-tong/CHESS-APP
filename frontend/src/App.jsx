@@ -8,6 +8,7 @@ import WaitingRoom from './pages/waiting-room.jsx';
 import FriendsList from './pages/friends-list.jsx';
 import Profile from './pages/profile.jsx';
 import EditAccount from './pages/edit-account.jsx';
+import UserSearch from './pages/user-search.jsx';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/friends-list" element={<FriendsList />} />
         <Route path="/profile/:userId" element={<Profile />} />
         <Route path="/edit-account" element={<EditAccount />} />
+        <Route path="/user-search" element={<UserSearch />} />
       </Routes>
     </Router>
   );

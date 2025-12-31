@@ -1,4 +1,4 @@
-# backend/api/users/views.py
+# Consolidated users views (clean single copy)
 from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash
 from ..models.friendships import Friendship
 from ..models.friendships import FriendshipStatus
 from ..models.moves import Move
+
 
 users_namespace = Namespace('users', description = "namespace for users")
 
@@ -44,14 +45,12 @@ game_list_model = users_namespace.model('GameListElement', {
 @users_namespace.route('/users/<int:user_id>')
 class UserInfoAndStatus(Resource):
 
-
     @users_namespace.marshal_with(user_model)
     def get(self, user_id):
         """ get user info and status """
 
         try:
             user = User.get_by_id(user_id)
-
 
             in_game = Game.query.filter(
                 ((Game.white_user_id == user.id) | (Game.black_user_id == user.id)) &
@@ -71,8 +70,6 @@ class UserInfoAndStatus(Resource):
         except:
             return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
 
-
-        
     @jwt_required()
     @users_namespace.expect(user_update_model)
     def put(self, user_id):
@@ -94,7 +91,7 @@ class UserInfoAndStatus(Resource):
                 if 'email' in data:
                     user.email = data['email']
                 if 'password' in data:
-                    user.password_hash = generate_password_hash(data['password'])  # In real implementation, hash the password
+                    user.password_hash = generate_password_hash(data['password'])
 
                 user.save()
 
@@ -104,7 +101,6 @@ class UserInfoAndStatus(Resource):
 
         except:
             return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
-
 
     @jwt_required()
     def delete(self, user_id):
@@ -121,36 +117,55 @@ class UserInfoAndStatus(Resource):
         except:
             return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
 
+
 @users_namespace.route('/users/<int:user_id>/friends')
 class GetFriendsOfUser(Resource):
-    
 
     def get(self, user_id):
-        """ get json list of friends of user with user_id"""
-        
-        friendListFetch = Friendship.query.filter(
+        """ get json list of friends of user with user_id. Supports pagination via ?limit=&offset="""
+
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
+
+        friendship_query = Friendship.query.filter(
             ((Friendship.user1_id == user_id) | (Friendship.user2_id == user_id)) &
             (Friendship.status == FriendshipStatus.ACCEPTED)
-        ).all()
+        ).order_by(Friendship.id.desc())
 
-        friendIds = [entry.user1_id if entry.user1_id != user_id else entry.user2_id for entry in friendListFetch]
+        total_count = friendship_query.count()
 
-        if not friendIds:
-            return [], HTTPStatus.OK
+        if offset is not None:
+            friendship_query = friendship_query.offset(offset)
+        if limit is not None:
+            friendship_query = friendship_query.limit(limit)
 
-        friends = User.query.filter(User.id.in_(friendIds)).all()
+        friend_entries = friendship_query.all()
 
-        def get_elo(user_id):
-            elo_entry = EloEntry.query.filter_by(user_id=user_id).order_by(EloEntry.created_at.desc()).first()
-            return elo_entry.elo if elo_entry else 'N/A'  # Default Elo if none found
+        friend_ids = [entry.user1_id if entry.user1_id != user_id else entry.user2_id for entry in friend_entries]
 
+        if not friend_ids:
+            return [], HTTPStatus.OK, {'X-Total-Count': str(total_count)}
 
+        friends = User.query.filter(User.id.in_(friend_ids)).all()
+        friends_by_id = {f.id: f for f in friends}
 
-        return [{'id': friend.id, 'username': friend.username, 'elo': get_elo(friend.id)} for friend in friends], HTTPStatus.OK
+        def get_elo(u_id):
+            elo_entry = EloEntry.query.filter_by(user_id=u_id).order_by(EloEntry.created_at.desc()).first()
+            return elo_entry.elo if elo_entry else 'N/A'
+
+        result = []
+        for fid in friend_ids:
+            f = friends_by_id.get(fid)
+            if not f:
+                continue
+            result.append({'id': f.id, 'username': f.username, 'elo': get_elo(f.id)})
+
+        return result, HTTPStatus.OK, {'X-Total-Count': str(total_count)}
+
 
 @users_namespace.route('/users/<int:user_id>/friends/pending')
 class GetPendingFriendsRequestsToUser(Resource):
-    
+
     @jwt_required()
     def get(self, user_id):
         """ get json list of pending friend requests of user with user_id"""
@@ -187,17 +202,29 @@ class GetGameHistoryOfUser(Resource):
 
     @users_namespace.marshal_list_with(game_list_model)
     def get(self, user_id):
-        """get game history for a user"""
+        """get game history for a user. Supports pagination via ?limit=&offset="""
+
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
 
         user = User.get_by_id(user_id)
         if not user:
             return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
 
-        games_as_white = Game.query.filter_by(white_user_id=user_id).all()
-        games_as_black = Game.query.filter_by(black_user_id=user_id).all()
+        games_as_white = Game.query.filter_by(white_user_id=user_id)
+        games_as_black = Game.query.filter_by(black_user_id=user_id)
 
-        all_games = games_as_white + games_as_black
-        all_games.sort(key=lambda g: g.created_at, reverse=True)
+        total_count = games_as_white.count() + games_as_black.count()
+
+        all_games_query = games_as_white.union_all(games_as_black).order_by(Game.created_at.desc())
+
+        if offset is not None:
+            all_games_query = all_games_query.offset(offset)
+        if limit is not None:
+            all_games_query = all_games_query.limit(limit)
+
+        all_games = all_games_query.all()
+
         all_games_formatted = []
         for game in all_games:
             moves = [move.uci for move in Move.get_moves_by_game_id(game.id)]
@@ -222,48 +249,38 @@ class GetGameHistoryOfUser(Resource):
             }
             all_games_formatted.append(game_data)
 
-        return all_games_formatted, HTTPStatus.OK
-# backend/api/users/views.py
-from flask_restx import Resource, Namespace, fields
-from http import HTTPStatus
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from ..models.users import User
-from ..models.games import Game
-from ..models.elo import EloEntry
-from flask import request
-from werkzeug.security import generate_password_hash
-from ..models.friendships import Friendship
-from ..models.friendships import FriendshipStatus
-from ..models.moves import Move
+        return all_games_formatted, HTTPStatus.OK, {'X-Total-Count': str(total_count)}
 
-users_namespace = Namespace('users', description = "namespace for users")
 
-user_model = users_namespace.model('User', {
-    'id': fields.Integer(required=True, description='User ID'), 
-    'username': fields.String(required=True, description='Username'),
-    'elo': fields.Integer(required=True, description='Elo Rating'),
-    'in_game': fields.Boolean(required=True, description='Is user currently in a game'),
-})
+@users_namespace.route('/users/search')
+class SearchUsers(Resource):
 
-user_update_model = users_namespace.model('UserUpdate', {
-    'username': fields.String(required=False, description='Username'),
-    'email': fields.String(required=False, description='Email'),
-    'password': fields.String(required=False, description='Password'),
-})
+    def get(self):
+        """Search users by username prefix. Query params: q, limit, offset"""
+        q = request.args.get('q', '').strip()
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
 
-game_list_model = users_namespace.model('GameListElement', {
-    'id': fields.Integer(description='Game ID'),
-    'in_progress': fields.Boolean(description='Is the game in progress'),
-    'white_user_id': fields.Integer(description='White Player User ID'),
-    'black_user_id': fields.Integer(description='Black Player User ID'),
-    'white_username': fields.String(description='White Player Username'),
-    'black_username': fields.String(description='Black Player Username'),
-    'white_elo': fields.Integer(description='White Player ELO at game time'),
-    'black_elo': fields.Integer(description='Black Player ELO at game time'),
-    'created_at': fields.DateTime(description='Game creation timestamp'),
-    'moves': fields.List(fields.String, description='List of moves in UCI format'),
-    'winner_id': fields.Integer(description='Winner User ID, null if draw or ongoing'),
-})
+        if q == '':
+            return {'message': 'Query parameter q required'}, HTTPStatus.BAD_REQUEST
+
+        base_query = User.query.filter(User.username.ilike(f"{q}%"))
+        total_count = base_query.count()
+
+        query = base_query.order_by(User.username.asc())
+
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+
+        users = query.all()
+        result = []
+        for u in users:
+            elo_entry = EloEntry.query.filter_by(user_id=u.id).order_by(EloEntry.created_at.desc()).first()
+            result.append({'id': u.id, 'username': u.username, 'elo': elo_entry.elo if elo_entry else 'N/A'})
+
+        return result, HTTPStatus.OK, {'X-Total-Count': str(total_count)}
 
 
 @users_namespace.route('/users/<int:user_id>')

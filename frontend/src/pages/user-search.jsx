@@ -1,52 +1,35 @@
-import React, { useState } from 'react';
-import usePaginatedFetch from '../hooks/usePaginatedFetch';
-import UserListItem from '../components/UserListItem';
-import Button from '../components/Button';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react'
+import usePaginatedFetch from '../hooks/usePaginatedFetch'
+import UserListItem from '../components/UserListItem'
+import ListShell from '../components/ListShell'
+import Button from '../components/Button'
+import { useNavigate } from 'react-router-dom'
 
-export default function UserSearch() {
-  const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [params, setParams] = useState({});
-
-  const { items: users, loading, error, hasMore, loadMore, refresh } = usePaginatedFetch('/users/search', { pageSize: 10, params });
-
-  const handleSubmit = (e) => {
-    e && e.preventDefault();
-    if (!query) return;
-    // update params to trigger fetch
-    setParams({ q: query });
-  };
+export default function UserSearch(){
+  const navigate = useNavigate()
+  const [q, setQ] = useState('')
+  const { items: users, loading, error, hasMore, loadMore, refresh } = usePaginatedFetch('/users/users/search', { pageSize: 20, params: { q } })
 
   return (
     <div style={{ padding: 20 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input placeholder="Search username prefix" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <Button onClick={handleSubmit}>Search</Button>
-        <Button onClick={() => { setQuery(''); setParams({}); refresh(); }}>Clear</Button>
-        <Button onClick={() => navigate(-1)} style={{ marginLeft: 'auto' }}>Back</Button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>Search Users</h1>
+        <Button onClick={() => navigate('/')}>Home</Button>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <input value={q} onChange={(e)=>setQ(e.target.value)} placeholder="username prefix" />
+        <Button onClick={refresh} style={{ marginLeft: 8 }}>Search</Button>
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        {error && <div style={{ color: 'red' }}>{error}</div>}
-        {loading && users.length === 0 ? (
-          <p>Searching...</p>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {users.map((u) => (
-              <li key={u.id} style={{ marginBottom: 8 }}>
-                <UserListItem user={u} showElo actions={[{ label: 'View', onClick: () => navigate(`/profile/${u.id}`) }]} />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {hasMore && users.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <Button onClick={loadMore}>{loading ? 'Loading...' : 'Load more'}</Button>
-          </div>
-        )}
-      </div>
+      <ListShell loading={loading} emptyMessage="No users found">
+        {error && <div style={{ color: 'red' }}>{String(error)}</div>}
+        <ul style={{ listStyle: 'none', padding: 0 }}>
+          {users.map(u => (
+            <UserListItem key={u.id} user={u} showElo />
+          ))}
+        </ul>
+        {hasMore && <Button onClick={loadMore}>Load more</Button>}
+      </ListShell>
     </div>
-  );
+  )
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Button from '../components/Button';
 import api from '../api/api';
 
 export default function EditAccount() {
@@ -60,7 +61,10 @@ export default function EditAccount() {
 
   return (
     <div style={{ padding: 24, fontFamily: 'Arial' }}>
-      <h1>Edit Account</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>Edit Account</h1>
+        <Button onClick={() => navigate('/')}>Home</Button>
+      </div>
       <p>{message}</p>
       {!viewerId ? (
         <div>Please log in to edit your account.</div>

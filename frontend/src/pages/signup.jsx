@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import api from '../api/api';
 import { Link, useNavigate } from 'react-router-dom';
+import Button from '../components/Button';
 
 export default function SignUp() {
     const [email, setEmail] = useState('');
@@ -32,7 +33,10 @@ export default function SignUp() {
 
     return (
         <div style={{ padding: '40px', fontFamily: 'Arial' }}>
-            <h1>Sign Up</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h1>Sign Up</h1>
+                <Button onClick={() => navigate('/')}>Home</Button>
+            </div>
             <p>Status: {message}</p>
             <form onSubmit={handleSignUp}>
                 <input type="email" placeholder="Email" onChange={(e) => setEmail(e.target.value)} />

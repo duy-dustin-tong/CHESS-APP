@@ -51,7 +51,9 @@ export default function WaitingRoom() {
 
   return(
     <div>
-      <h1>Waiting Room</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>Waiting Room</h1>
+      </div>
         <StatusMessage message={message} />
 
       <ListShell title="Pending Challenges" emptyMessage="No pending challenges." loading={false}>

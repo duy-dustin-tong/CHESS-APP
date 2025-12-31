@@ -6,6 +6,7 @@ import socket from "../api/sockets";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 import { useNavigate } from "react-router-dom";
+import Button from '../components/Button';
 import GameControls from '../components/GameControls';
 
 export default function Game() {
@@ -324,7 +325,10 @@ export default function Game() {
   
   return (
     <div>
-      <h1>Game ID: {gameId}</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>Game ID: {gameId}</h1>
+        <Button onClick={() => navigate('/')}>Home</Button>
+      </div>
       <p>White Player ID: {whiteId}</p>
       <p>Black Player ID: {blackId}</p>
 

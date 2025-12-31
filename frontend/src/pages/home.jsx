@@ -104,6 +104,7 @@ export default function Home() {
             </div>
             <div>
                 {username && <Button onClick={seeFriends}>See friends list</Button>}
+                {username && <Button onClick={()=>navigate('/user-search')} style={{ marginLeft: 8 }}>Search Users</Button>}
             </div>
 
 
