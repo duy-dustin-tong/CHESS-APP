@@ -28,6 +28,8 @@ export default function Game() {
   const [chessPosition, setChessPosition] = useState(chessGame.fen());
   const [moveFrom, setMoveFrom] = useState('');
   const [optionSquares, setOptionSquares] = useState({});
+  const [whiteTime, setWhiteTime] = useState(600);
+  const [blackTime, setBlackTime] = useState(600);
 
   const navigate = useNavigate();
 
@@ -41,6 +43,8 @@ export default function Game() {
       if (chessGame.fen() !== data.current_fen) {
         chessGame.move(data.move);
         setChessPosition(chessGame.fen());
+        setBlackTime(data.black_time_left);
+        setWhiteTime(data.white_time_left);
       }
     });
 
@@ -86,6 +90,9 @@ export default function Game() {
         const response = await api.get(`/games/games/${gameId}`);     
         setWhiteId(response.data.white_user_id);
         setBlackId(response.data.black_user_id);
+
+        setWhiteTime(response.data.white_time_left);
+        setBlackTime(response.data.black_time_left);
         
         // If game is already in progress, sync board with FEN from DB
         if (response.data.current_fen) {
@@ -100,6 +107,42 @@ export default function Game() {
     const storedId = localStorage.getItem("user_id");
     setMyUserId(parseInt(storedId, 10));
   }, [gameId]);
+
+  // Tick the clock
+  useEffect(() => {
+    if (!chessGame || chessGame.isGameOver()) return;
+
+    const timer = setInterval(() => {
+      const turn = chessGame.turn();
+      if (turn === 'w') {
+        setWhiteTime((prev) => Math.max(0, prev - 1));
+      } else {
+        setBlackTime((prev) => Math.max(0, prev - 1));
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [chessPosition]); // Reset interval when position changes
+
+  useEffect(() => {
+    const checkTimeout = async () => {
+      if (whiteTime <= 0 || blackTime <= 0) {
+        try {
+          await api.post(`/games/games/${gameId}/claim-timeout`);
+        } catch (err) {
+          console.log("Timeout claim failed or already processed");
+        }
+      }
+    };
+    checkTimeout();
+  }, [whiteTime, blackTime, gameId]);
+
+  // Format seconds to MM:SS
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   // 3. SEND MOVE TO BACKEND
   const submitMove = async (moveUCI) => {
@@ -344,6 +387,15 @@ export default function Game() {
         opponentId={opponentId}
         statusMessage={null}
       />
+
+      <div style={{ display: 'flex', gap: '20px', fontSize: '24px', fontWeight: 'bold' }}>
+        <div style={{ color: chessGame.turn() === 'w' ? 'red' : 'black' }}>
+          White: {formatTime(whiteTime)}
+        </div>
+        <div style={{ color: chessGame.turn() === 'b' ? 'red' : 'black' }}>
+          Black: {formatTime(blackTime)}
+        </div>
+      </div>
 
       <Chessboard options={chessboardOptions} />
 

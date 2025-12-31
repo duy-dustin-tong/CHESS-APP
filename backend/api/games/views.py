@@ -13,6 +13,7 @@ from ..models.challenges import Challenge
 from ..utils import db, socketio
 from ..utils.eloChange import calculate_new_elo_pair_after_draw, calculate_new_elo_pair_after_win
 import chess
+from datetime import datetime
 
 games_namespace = Namespace('games', description= "games namespace")
 
@@ -23,6 +24,8 @@ game_model = games_namespace.model('Game', {
     'current_fen': fields.String(description='Current FEN string of the game'),
     'white_user_id': fields.Integer(description='White Player User ID'),
     'black_user_id': fields.Integer(description='Black Player User ID'),
+    'white_time_left': fields.Integer(),
+    'black_time_left': fields.Integer(),
     'created_at': fields.DateTime(description='Game creation timestamp'),
     'updated_at': fields.DateTime(description='Game last update timestamp'),
 })
@@ -77,10 +80,67 @@ class MakeMove(Resource):
         game.draw_offer_from = None  # Clear any existing draw offers on move
 
         board = chess.Board(game.current_fen) if game.current_fen else chess.Board()
+        
+        
         current_turn_user_id = game.white_user_id if board.turn == chess.WHITE else game.black_user_id
 
         if user_id != current_turn_user_id:
             return {'message': "It is not your turn"}, HTTPStatus.FORBIDDEN
+        
+        
+        # 2. Update Clocks
+        
+        now = datetime.utcnow()
+        seconds_elapsed = int((now - game.updated_at).total_seconds())
+
+        # If it was white's turn, subtract time from white
+        if board.turn == chess.WHITE:
+            game.white_time_left = max(0, game.white_time_left - seconds_elapsed)
+        else:
+            game.black_time_left = max(0, game.black_time_left - seconds_elapsed)
+        
+        # Check for time-out
+        if game.white_time_left <= 0 or game.black_time_left <= 0:
+            game.in_progress = False
+            game.winner_id = game.black_user_id if game.white_time_left <= 0 else game.white_user_id
+            reason = "Time out"
+
+            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
+            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+            new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)
+
+            if(board.is_insufficient_material()):
+                game.winner_id = None  # Draw due to insufficient material
+                reason = "Draw due to insufficient material"
+                new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.elo, white_elo_entry.elo)
+            
+            new_black_elo = EloEntry(
+                user_id=game.black_user_id,
+                game_id=game.id,
+                elo=new_elos[0]
+            )
+            new_white_elo = EloEntry(
+                user_id=game.white_user_id,
+                game_id=game.id,
+                elo=new_elos[1]
+            )
+            new_black_elo.save()
+            new_white_elo.save()
+
+            game.save()
+
+            socketio.emit('game_over', {
+                'winner_id': game.winner_id,
+                'reason': reason
+            }, to=f"game_{game_id}")
+
+
+            return game, HTTPStatus.OK
+        
+        
+        
+        
+        
         
         # 3. Validate and Push Move
         try:
@@ -95,6 +155,7 @@ class MakeMove(Resource):
         
         # 4. Update Game Object
         game.current_fen = board.fen()
+        
 
         new_move = Move(
             game_id=game.id,
@@ -103,6 +164,9 @@ class MakeMove(Resource):
         )
 
         new_move.save()
+
+
+            
 
 
         # 5. Check for Game End (Checkmate/Draw)
@@ -138,6 +202,8 @@ class MakeMove(Resource):
             new_black_elo.save()
             new_white_elo.save()
 
+        
+
         game.save()
 
         # 6. Socket Emit
@@ -146,7 +212,9 @@ class MakeMove(Resource):
             'move': move,
             'current_fen': game.current_fen,
             'is_game_over': not game.in_progress,
-            'winner_id': getattr(game, 'winner_id', None)
+            #'winner_id': getattr(game, 'winner_id', None)
+            'white_time_left': game.white_time_left,
+            'black_time_left': game.black_time_left
         }, to=f"game_{game_id}")
 
 
@@ -155,6 +223,9 @@ class MakeMove(Resource):
             reason = "draw"
             if board.is_checkmate():
                 reason = "checkmate"
+
+            elif game.white_time_left <= 0 or game.black_time_left <= 0:
+                reason = "time_out"
             
             socketio.emit('game_over', {
                 'winner_id': game.winner_id,
@@ -302,6 +373,63 @@ class RespondDraw(Resource):
 
         return game, HTTPStatus.OK
 
+
+@games_namespace.route('/games/<int:game_id>/claim-timeout')
+class ClaimTimeout(Resource):
+    @jwt_required()
+    def post(self, game_id):
+        game = Game.get_by_id(game_id)
+        if not game.in_progress:
+            return {'message': 'Game already ended'}, HTTPStatus.BAD_REQUEST
+
+        now = datetime.utcnow()
+        seconds_elapsed = int((now - game.updated_at).total_seconds())
+        
+        board = chess.Board(game.current_fen)
+        
+        # Calculate current actual time
+        w_time = game.white_time_left - (seconds_elapsed if board.turn == chess.WHITE else 0)
+        b_time = game.black_time_left - (seconds_elapsed if board.turn == chess.BLACK else 0)
+
+        if w_time <= 0 or b_time <= 0:
+            game.in_progress = False
+            game.winner_id = game.black_user_id if w_time <= 0 else game.white_user_id
+            reason = "Time out"
+
+            game.save()
+            
+            # Update Elo elos
+            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
+            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+            new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)     
+            
+            if(board.is_insufficient_material()):
+                game.winner_id = None  # Draw due to insufficient material
+                reason = "Draw due to insufficient material"
+                new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.elo, white_elo_entry.elo)
+
+            new_black_elo = EloEntry(
+                user_id=game.black_user_id,
+                game_id=game.id,
+                elo=new_elos[0]
+            )       
+            new_white_elo = EloEntry(
+                user_id=game.white_user_id,
+                game_id=game.id,
+                elo=new_elos[1]
+            )
+            new_black_elo.save()
+            new_white_elo.save()
+
+
+            
+            socketio.emit('game_over', {
+                'winner_id': game.winner_id,
+                'reason': reason
+            }, to=f"game_{game_id}")
+            return {'message': 'timeout claimed'}, HTTPStatus.OK
+            
+        return {'message': 'Time has not expired yet'}, HTTPStatus.BAD_REQUEST
 
 
     

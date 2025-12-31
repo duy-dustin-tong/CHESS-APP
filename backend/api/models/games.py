@@ -21,6 +21,9 @@ class Game(db.Model):
     draw_offer_from = db.Column(db.Integer(), nullable=True, default=None)
     win_by_resignation = db.Column(db.Boolean(), default=False)
 
+    white_time_left = db.Column(db.Integer(), default=600) # 60 seconds
+    black_time_left = db.Column(db.Integer(), default=600)
+
     created_at = db.Column(db.DateTime(), default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime(), default=datetime.utcnow, index=True)
 
