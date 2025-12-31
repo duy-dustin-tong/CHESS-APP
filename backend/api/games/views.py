@@ -20,13 +20,14 @@ games_namespace = Namespace('games', description= "games namespace")
 game_model = games_namespace.model('Game', {
     'id': fields.Integer(description='Game ID'),
     'in_progress': fields.Boolean(description='Is the game in progress'),
-    'moves': fields.String(description='Moves made in the game'),
     'current_fen': fields.String(description='Current FEN string of the game'),
     'white_user_id': fields.Integer(description='White Player User ID'),
     'black_user_id': fields.Integer(description='Black Player User ID'),
     'created_at': fields.DateTime(description='Game creation timestamp'),
     'updated_at': fields.DateTime(description='Game last update timestamp'),
 })
+
+
 
 draw_response_model = games_namespace.model('DrawResponse', {
     'accept': fields.Boolean(required=True, description='Accept or reject the draw offer'),
@@ -300,3 +301,7 @@ class RespondDraw(Resource):
         }, to=f"game_{game_id}")
 
         return game, HTTPStatus.OK
+
+
+
+    

@@ -1,11 +1,12 @@
 import React from 'react';
 import Button from './Button';
+import { Link } from 'react-router-dom';
 
 export default function UserListItem({ user, showElo = false, actions = [] }) {
   return (
     <li style={{ marginBottom: '10px', padding: '10px', border: '1px solid #eee', borderRadius: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <div>
-        <strong style={{ display: 'block' }}>{user.username}</strong>
+        <strong style={{ display: 'block' }}><Link to={`/profile/${user.id}`}>{user.username}</Link></strong>
         {showElo && <div style={{ color: '#666' }}>Elo: {user.elo}</div>}
       </div>
 

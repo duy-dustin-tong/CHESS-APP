@@ -5,6 +5,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request
 from ..models.queue import Queue
 from ..models.games import Game
+
 from ..utils import db, socketio
 import threading
 
@@ -55,6 +56,7 @@ class MatchMaking(Resource):
                     # create the game (white = first queued)
                     game = Game(white_user_id=u1, black_user_id=u2)
                     db.session.add(game)
+
                     # remove the two queue entries
                     for e in entries:
                         db.session.delete(e)

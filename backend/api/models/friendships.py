@@ -22,6 +22,7 @@ class Friendship(db.Model):
         return f"Friendship {self.id} | Requester: {self.user1_id} | Addressee: {self.user2_id} | Status: {self.status.value}"
     
     def save(self):
+        self
         db.session.add(self)
         db.session.commit()
 

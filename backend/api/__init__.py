@@ -10,7 +10,6 @@ from .config.config import config_dict
 from .utils import db, socketio
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
-from .models import users, games, friendships, userGames
 from .challenges.views import challenge_namespace
 from flask_cors import CORS
 

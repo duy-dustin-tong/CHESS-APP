@@ -17,6 +17,7 @@ class User(db.Model):
         return f"User {self.id} | Username: {self.username} | Email: {self.email}"
     
     def save(self):
+        self.updated_at = datetime.utcnow()
         db.session.add(self)
         db.session.commit()
 

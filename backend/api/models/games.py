@@ -28,6 +28,7 @@ class Game(db.Model):
         return f"Game {self.id} | In Progress: {self.in_progress}"
     
     def save(self):
+        self.updated_at = datetime.utcnow()
         db.session.add(self)
         db.session.commit()
 

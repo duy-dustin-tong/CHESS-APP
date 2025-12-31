@@ -97,6 +97,9 @@ export default function Home() {
                 {username && <Button onClick={handleLogout} style={{ marginLeft: '10px' }}>Logout</Button>}
             </div>
             <div>
+                {username && <Button onClick={()=>navigate(`/profile/${myUserId}`)}>My profile</Button>}
+            </div>
+            <div>
                 {username && <Button onClick={handleJoinQueue}>Join a match</Button>}
             </div>
             <div>
