@@ -152,9 +152,13 @@ export default function Game() {
     } catch (error) {
       console.error("Move rejected by server:", error);
       // Revert board if server rejects it
-      const response = await api.get(`/games/games/${gameId}`);
-      chessGame.load(response.data.current_fen);
-      setChessPosition(chessGame.fen());
+      try {
+        const response = await api.get(`/games/games/${gameId}`);
+        chessGame.load(response.data.current_fen);
+        setChessPosition(chessGame.fen());
+      } catch (err2) {
+        console.error('Failed to refresh game state after rejected move', err2);
+      }
     }
   };
 

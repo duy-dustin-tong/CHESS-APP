@@ -93,16 +93,23 @@ class GetPendingChallenges(Resource):
         
         # Find challenges where I am the receiver
         challenges = Challenge.query.filter_by(user2_id=user_id).all()
-        
+
+        if not challenges:
+            return [], HTTPStatus.OK
+
+        sender_ids = [c.user1_id for c in challenges]
+        senders = User.query.filter(User.id.in_(sender_ids)).all()
+        senders_by_id = {s.id: s for s in senders}
+
         response = []
         for c in challenges:
-            sender = User.query.get(c.user1_id)
+            sender = senders_by_id.get(c.user1_id)
             response.append({
                 # We use the same key names as the socket event for consistency
-                'challenge_id': c.id, 
-                'username': sender.username,
+                'challenge_id': c.id,
+                'username': sender.username if sender else 'Unknown',
             })
-            
+
         return response, HTTPStatus.OK
 
 @challenge_namespace.route('/respond_challenge/<int:challenge_id>/<string:response>')

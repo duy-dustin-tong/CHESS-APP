@@ -40,9 +40,11 @@ export default function WaitingRoom() {
   },[navigate]);
 
   useEffect(() => {
-    if(myUserId){
-      socket.emit("register_user", { userId: myUserId});
-    } 
+    // socket will join user room on connect; no need to emit register_user manually
+    if (myUserId && socket && socket.connect) {
+      // ensure socket is connected (will use token from localStorage)
+      try { socket.connect(); } catch (e) {}
+    }
 
   }, []);
 

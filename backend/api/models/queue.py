@@ -1,6 +1,10 @@
 # backend/api/models/queue.py
 from ..utils import db
 from datetime import datetime
+import logging
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 class Queue(db.Model):
     __tablename__ = 'queue'
@@ -13,11 +17,29 @@ class Queue(db.Model):
     
     def save(self):
         db.session.add(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            logger.exception('IntegrityError saving Queue entry')
+            raise
+        except SQLAlchemyError:
+            db.session.rollback()
+            logger.exception('Database error saving Queue entry')
+            raise
+        except Exception:
+            db.session.rollback()
+            logger.exception('Unexpected error saving Queue entry')
+            raise
 
     def delete(self):
         db.session.delete(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception('Failed to delete Queue entry')
+            raise
 
     @classmethod
     def get_by_id(cls, id):

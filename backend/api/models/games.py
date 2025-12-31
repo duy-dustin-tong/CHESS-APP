@@ -4,6 +4,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 import json
 from enum import Enum
 from datetime import datetime
+import logging
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -33,11 +37,29 @@ class Game(db.Model):
     def save(self):
         self.updated_at = datetime.utcnow()
         db.session.add(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            logger.exception('IntegrityError saving Game')
+            raise
+        except SQLAlchemyError:
+            db.session.rollback()
+            logger.exception('Database error saving Game')
+            raise
+        except Exception:
+            db.session.rollback()
+            logger.exception('Unexpected error saving Game')
+            raise
 
     def delete(self):
         db.session.delete(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception('Failed to delete Game')
+            raise
 
     @classmethod
     def get_by_id(cls, id):

@@ -7,7 +7,11 @@ from ..models.queue import Queue
 from ..models.games import Game
 
 from ..utils import db, socketio
+from sqlalchemy.exc import SQLAlchemyError
+import logging
 import threading
+
+logger = logging.getLogger(__name__)
 
 # Simple process-local lock to serialize pairing operations.
 # This is safe for a single-process dev server. For production use
@@ -40,7 +44,11 @@ class MatchMaking(Resource):
             return {'message': 'User is already in an ongoing game'}, HTTPStatus.BAD_REQUEST
         #if not, add to queue
         new_entry = Queue(user_id=user_id)
-        new_entry.save()
+        try:
+            new_entry.save()
+        except SQLAlchemyError:
+            logger.exception('DB error saving queue entry')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
         # Try to pair the first two users in queue. Use a lock to avoid races
         # on a single-process server. We remove the two queue entries and
@@ -84,9 +92,15 @@ class MatchMaking(Resource):
                     }, to=f"user_{u2}")
 
                     # --- SOCKET NOTIFICATION END ---
-                except Exception as e:
-                    print(f"Matchmaking Error: {e}")
+                except SQLAlchemyError as e:
+                    logger.exception('Database error during matchmaking pairing')
                     db.session.rollback()
+                except Exception as e:
+                    logger.exception('Unexpected error during matchmaking pairing')
+                    try:
+                        db.session.rollback()
+                    except Exception:
+                        pass
 
         if paired_game:
             return {
@@ -105,7 +119,11 @@ class MatchMaking(Resource):
         existing_entry = Queue.query.filter_by(user_id=user_id).first()
         if not existing_entry:
             return {'message': 'User not in queue'}, HTTPStatus.BAD_REQUEST
-        existing_entry.delete()
+        try:
+            existing_entry.delete()
+        except SQLAlchemyError:
+            logger.exception('DB error deleting queue entry')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
         return {'message': 'User removed from queue'}, HTTPStatus.OK
 
 

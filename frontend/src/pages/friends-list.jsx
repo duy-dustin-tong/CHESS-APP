@@ -81,9 +81,7 @@ export default function FriendsList() {
 
 
 
-    useEffect(() => {
-        if (myUserId) socket.emit('register_user', { userId: myUserId });
-    }, [myUserId]);
+    // socket will join user room on connect; no need to emit register_user manually
 
     useEffect(() => {
 

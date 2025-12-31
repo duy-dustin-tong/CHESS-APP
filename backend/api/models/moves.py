@@ -2,6 +2,10 @@
 from ..utils import db
 import json
 from datetime import datetime
+import logging
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 class Move(db.Model):
     __tablename__ = 'moves'
@@ -16,7 +20,20 @@ class Move(db.Model):
     
     def save(self):
         db.session.add(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            logger.exception('IntegrityError saving Move')
+            raise
+        except SQLAlchemyError:
+            db.session.rollback()
+            logger.exception('Database error saving Move')
+            raise
+        except Exception:
+            db.session.rollback()
+            logger.exception('Unexpected error saving Move')
+            raise
 
     @classmethod
     def get_moves_by_game_id(cls, game_id):

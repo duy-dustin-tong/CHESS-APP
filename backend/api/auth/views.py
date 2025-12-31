@@ -7,6 +7,10 @@ from flask_jwt_extended import create_access_token, create_refresh_token, jwt_re
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.exceptions import Conflict, BadRequest
 from flask import request
+from sqlalchemy.exc import IntegrityError
+import logging
+
+logger = logging.getLogger(__name__)
 
 auth_namespace = Namespace('auth', description = "auth namespace")
 
@@ -51,8 +55,12 @@ class SignUp(Resource):
             )
             new_elo_entry.save()
             return new_user, HTTPStatus.CREATED
+        except IntegrityError as ie:
+            logger.exception('IntegrityError during signup')
+            raise Conflict('User with provided email or username already exists.')
         except Exception as e:
-            raise Conflict("User with provided email or username already exists.")
+            logger.exception('Unexpected error during signup')
+            return {'message': 'Internal server error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
 @auth_namespace.route('/login')
 class LogIn(Resource):
@@ -88,10 +96,9 @@ class Refresh(Resource):
 
         access_token = create_access_token(identity=user_id)
         
-        try:
-            user = User.query.filter_by(id=int(user_id)).first()
-        except Exception:
-            raise BadRequest("User not found.")
+        user = User.query.filter_by(id=int(user_id)).first()
+        if not user:
+            raise BadRequest('User not found.')
         
         return {
             "username": user.username,

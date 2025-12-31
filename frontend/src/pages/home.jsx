@@ -46,7 +46,8 @@ export default function Home() {
         setMessage("Logged out successfully.");
         setUsername(null);
 
-        socket.emit("deregister_user", { userId: myUserId });
+        // Disconnect socket on logout so server removes the connection from rooms
+        try { socket.disconnect(); } catch (e) { /* ignore */ }
     };
 
     const seeFriends = () => {
@@ -75,8 +76,6 @@ export default function Home() {
         if (storedUsername) {
             setUsername(storedUsername);
             setMyUserId(parseInt(localStorage.getItem('user_id')));
-            // register user for sockets
-            socket.emit('register_user', { userId: myUserId });
         }
 
     }, []);

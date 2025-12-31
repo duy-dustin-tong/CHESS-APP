@@ -20,13 +20,16 @@ except Exception:
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 class Config:
-    SECRET_KEY = config('SECRET_KEY', default='ceclol')
-    JWT_SECRET_KEY = config('JWT_SECRET_KEY')
+    SECRET_KEY = config('SECRET_KEY', default=None)
+    JWT_SECRET_KEY = config('JWT_SECRET_KEY', default=None)
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=1)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=1)
 
 class DevConfig(Config):
     DEBUG = config('DEBUG', default=True, cast=bool)
+    # safe defaults for local development
+    SECRET_KEY = config('SECRET_KEY', default='dev-secret')
+    JWT_SECRET_KEY = config('JWT_SECRET_KEY', default='dev-jwt-secret')
     SQLALCHEMY_ECHO = True
     SQLALCHEMY_DATABASE_URI = f'sqlite:///{os.path.join(BASE_DIR, "db.sqlite3")}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -42,6 +45,16 @@ class ProdConfig(Config):
     DEBUG = config('DEBUG', default=False, cast=bool)
     SQLALCHEMY_DATABASE_URI = config('DATABASE_URL')
     SQLALCHEMY_TRACK_MODIFICATIONS = False  
+
+
+# Validate that required secrets are present when running in production.
+# Use the ENV environment variable (set to 'prod' for production deployments).
+ENV = config('ENV', default='dev')
+if ENV == 'prod':
+    if not Config.SECRET_KEY:
+        raise RuntimeError('SECRET_KEY must be set in production environment')
+    if not Config.JWT_SECRET_KEY:
+        raise RuntimeError('JWT_SECRET_KEY must be set in production environment')
 
 config_dict = {
     'dev': DevConfig,

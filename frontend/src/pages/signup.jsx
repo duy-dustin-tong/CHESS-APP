@@ -25,9 +25,9 @@ export default function SignUp() {
                 setMessage("Sign up successful! You can now log in.");
             }
             navigate('/login');
-        } 
-        catch (error) {
-            setMessage("Sign up failed", error.response?.data?.message || '');
+        } catch (error) {
+            console.error('Signup error', error);
+            setMessage(error.response?.data?.message || "Sign up failed");
         }
     };
 

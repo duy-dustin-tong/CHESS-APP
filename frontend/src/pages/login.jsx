@@ -1,7 +1,7 @@
 // frontend/src/pages/login.jsx
 import { useState } from 'react';
 import api from '../api/api';
-import socket from '../api/sockets';
+import socket, { recreateSocket } from '../api/sockets';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../components/Button';
 
@@ -35,6 +35,7 @@ export default function LogIn() {
       
 
       setMessage("Logged in!");
+      try { recreateSocket(); } catch (e) { /* ignore */ }
       navigate('/');
     } 
     catch {

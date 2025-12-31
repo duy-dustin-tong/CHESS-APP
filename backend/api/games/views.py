@@ -14,8 +14,48 @@ from ..utils import db, socketio
 from ..utils.eloChange import calculate_new_elo_pair_after_draw, calculate_new_elo_pair_after_win
 import chess
 from datetime import datetime
+import logging
+import functools
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger(__name__)
+
+def handle_db_errors(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except SQLAlchemyError as e:
+            logger.exception('Database error in %s', func.__name__)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
+        except Exception as e:
+            logger.exception('Unexpected error in %s', func.__name__)
+            return {'message': 'Internal server error'}, HTTPStatus.INTERNAL_SERVER_ERROR
+    return wrapper
+from sqlalchemy import func
 
 games_namespace = Namespace('games', description= "games namespace")
+
+
+def get_latest_elo_map(user_ids):
+    """Return a map user_id -> latest EloEntry for the given user_ids."""
+    if not user_ids:
+        return {}
+    latest_sq = db.session.query(
+        EloEntry.user_id.label('user_id'),
+        func.max(EloEntry.created_at).label('max_created')
+    ).filter(EloEntry.user_id.in_(user_ids)).group_by(EloEntry.user_id).subquery()
+
+    latest_elos = db.session.query(EloEntry).join(
+        latest_sq,
+        (EloEntry.user_id == latest_sq.c.user_id) & (EloEntry.created_at == latest_sq.c.max_created)
+    ).all()
+
+    return {e.user_id: e for e in latest_elos}
 
 
 game_model = games_namespace.model('Game', {
@@ -59,6 +99,7 @@ class GameStatus(Resource):
 @games_namespace.route('/games/<int:game_id>/<string:move>')
 class MakeMove(Resource):
 
+    @handle_db_errors
     @jwt_required()
     @games_namespace.marshal_with(game_model)
     def put(self, game_id, move):
@@ -105,8 +146,9 @@ class MakeMove(Resource):
             game.winner_id = game.black_user_id if game.white_time_left <= 0 else game.white_user_id
             reason = "Time out"
 
-            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
-            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+            elo_map = get_latest_elo_map([game.black_user_id, game.white_user_id])
+            black_elo_entry = elo_map.get(game.black_user_id)
+            white_elo_entry = elo_map.get(game.white_user_id)
             new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)
 
             if(board.is_insufficient_material()):
@@ -159,7 +201,7 @@ class MakeMove(Resource):
 
         new_move = Move(
             game_id=game.id,
-            move_number=len(Move.get_moves_by_game_id(game.id)) + 1,
+            move_number=Move.query.filter_by(game_id=game.id).count() + 1,
             uci=move
         )
 
@@ -173,8 +215,9 @@ class MakeMove(Resource):
         if board.is_game_over():
             game.in_progress = False
 
-            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
-            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first() 
+            elo_map = get_latest_elo_map([game.black_user_id, game.white_user_id])
+            black_elo_entry = elo_map.get(game.black_user_id)
+            white_elo_entry = elo_map.get(game.white_user_id)
             new_elos = None
 
 
@@ -238,6 +281,7 @@ class MakeMove(Resource):
 @games_namespace.route('/games/<int:game_id>/resign')
 class Resign(Resource):
 
+    @handle_db_errors
     @jwt_required()
     @games_namespace.marshal_with(game_model)
     def post(self, game_id):
@@ -259,9 +303,10 @@ class Resign(Resource):
         game.win_by_resignation = True
         game.save()
 
-        # Update Elo elos
-        black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
-        white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+        # Update Elo elos (batch fetch latest entries)
+        elo_map = get_latest_elo_map([game.black_user_id, game.white_user_id])
+        black_elo_entry = elo_map.get(game.black_user_id)
+        white_elo_entry = elo_map.get(game.white_user_id)
         new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)
 
         
@@ -291,6 +336,7 @@ class Resign(Resource):
 @games_namespace.route('/games/<int:game_id>/offer-draw')
 class OfferDraw(Resource):
 
+    @handle_db_errors
     @jwt_required()
     def post(self, game_id):
         """offer a draw"""
@@ -315,6 +361,7 @@ class OfferDraw(Resource):
 @games_namespace.route('/games/<int:game_id>/respond-draw')
 class RespondDraw(Resource):
 
+    @handle_db_errors
     @jwt_required()
     @games_namespace.expect(draw_response_model)
     @games_namespace.marshal_with(game_model)
@@ -346,8 +393,9 @@ class RespondDraw(Resource):
         game.winner_id = None  # Draw
         game.save()
 
-        black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
-        white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
+        elo_map = get_latest_elo_map([game.black_user_id, game.white_user_id])
+        black_elo_entry = elo_map.get(game.black_user_id)
+        white_elo_entry = elo_map.get(game.white_user_id)
 
         new_elos = calculate_new_elo_pair_after_draw(black_elo_entry.elo, white_elo_entry.elo)
 
@@ -376,6 +424,7 @@ class RespondDraw(Resource):
 
 @games_namespace.route('/games/<int:game_id>/claim-timeout')
 class ClaimTimeout(Resource):
+    @handle_db_errors
     @jwt_required()
     def post(self, game_id):
         game = Game.get_by_id(game_id)
@@ -399,9 +448,10 @@ class ClaimTimeout(Resource):
             game.save()
             
             # Update Elo elos
-            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id).order_by(EloEntry.created_at.desc()).first()
-            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id).order_by(EloEntry.created_at.desc()).first()
-            new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)     
+            elo_map = get_latest_elo_map([game.black_user_id, game.white_user_id])
+            black_elo_entry = elo_map.get(game.black_user_id)
+            white_elo_entry = elo_map.get(game.white_user_id)
+            new_elos = calculate_new_elo_pair_after_win(black_elo_entry.elo, white_elo_entry.elo, game.winner_id == game.black_user_id)
             
             if(board.is_insufficient_material()):
                 game.winner_id = None  # Draw due to insufficient material

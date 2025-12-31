@@ -1,6 +1,10 @@
 # backend/api/models/challenges.py
 from ..utils import db
 from datetime import datetime
+import logging
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 class Challenge(db.Model):
     __tablename__ = 'challenges'
@@ -15,11 +19,29 @@ class Challenge(db.Model):
     
     def save(self):
         db.session.add(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            logger.exception('IntegrityError saving Challenge')
+            raise
+        except SQLAlchemyError:
+            db.session.rollback()
+            logger.exception('Database error saving Challenge')
+            raise
+        except Exception:
+            db.session.rollback()
+            logger.exception('Unexpected error saving Challenge')
+            raise
 
     def delete(self):
         db.session.delete(self)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception('Failed to delete Challenge')
+            raise
 
     @classmethod
     def get_by_id(cls, id):

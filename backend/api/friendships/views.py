@@ -3,7 +3,13 @@ from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from sqlalchemy.exc import IntegrityError
 from ..models.friendships import Friendship, FriendshipStatus
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import NotFound
+import logging
+
+logger = logging.getLogger(__name__)
 
 friendships_namespace = Namespace('friendships', description = "friendship namespace")
 
@@ -24,27 +30,43 @@ class CreateAnEntry(Resource):
         data = request.get_json()
         user1_id = data.get('user1_id')
         user2_id = data.get('user2_id')
+        # basic validation
+        if user1_id is None or user2_id is None:
+            return {'message': 'Both user1_id and user2_id are required'}, HTTPStatus.BAD_REQUEST
+        try:
+            user1_id = int(user1_id)
+            user2_id = int(user2_id)
+        except (TypeError, ValueError):
+            return {'message': 'Invalid user ids'}, HTTPStatus.BAD_REQUEST
 
+        if user1_id == user2_id:
+            return {'message': 'Cannot befriend yourself'}, HTTPStatus.BAD_REQUEST
 
         current_user_id = int(get_jwt_identity())
         if current_user_id != user1_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
 
-        # Check if a friendship already exists
+        # Check if a friendship already exists in either ordering
         existing_friendship = Friendship.query.filter(
             ((Friendship.user1_id == user1_id) & (Friendship.user2_id == user2_id)) |
             ((Friendship.user1_id == user2_id) & (Friendship.user2_id == user1_id))
         ).first()
 
         if existing_friendship:
-            return {'message': 'You are already friends or the other user sent you a friend request first'}, HTTPStatus.BAD_REQUEST
+            # If there's a pending request in the opposite direction, inform client
+            return {'message': 'You are already friends or a request already exists'}, HTTPStatus.CONFLICT
 
-        # Logic to create a friendship entry goes here
         entry = Friendship(
-            user1_id=user1_id, 
+            user1_id=user1_id,
             user2_id=user2_id
         )
-        entry.save()
+        try:
+            entry.save()
+        except IntegrityError:
+            return {'message': 'Friendship already exists'}, HTTPStatus.CONFLICT
+        except SQLAlchemyError:
+            logger.exception('Database error creating friendship')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
         return entry, HTTPStatus.CREATED
 
@@ -57,13 +79,27 @@ class UpdateDeleteEntry(Resource):
         """accept a friend request"""
 
         current_user_id = int(get_jwt_identity())
-        friendship = Friendship.get_by_id(friendship_id)
+        try:
+            friendship = Friendship.get_by_id(friendship_id)
+        except NotFound:
+            return {'message': 'Friendship not found'}, HTTPStatus.NOT_FOUND
+        except SQLAlchemyError:
+            logger.exception('DB error fetching friendship')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
         if current_user_id != friendship.user2_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
+        if friendship.status == FriendshipStatus.ACCEPTED:
+            return friendship, HTTPStatus.OK
 
         friendship.status = FriendshipStatus.ACCEPTED
-        friendship.save()
+        try:
+            friendship.save()
+        except IntegrityError:
+            return {'message': 'Failed to accept request due to database constraint'}, HTTPStatus.INTERNAL_SERVER_ERROR
+        except SQLAlchemyError:
+            logger.exception('DB error accepting friendship')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
         return friendship, HTTPStatus.OK
 
@@ -72,12 +108,22 @@ class UpdateDeleteEntry(Resource):
     def delete(self, friendship_id):
         """reject or cancel a friend request"""
         current_user_id = int(get_jwt_identity())
-        friendship = Friendship.get_by_id(friendship_id)
+        try:
+            friendship = Friendship.get_by_id(friendship_id)
+        except NotFound:
+            return {'message': 'Friendship not found'}, HTTPStatus.NOT_FOUND
+        except SQLAlchemyError:
+            logger.exception('DB error fetching friendship')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
-        if current_user_id != friendship.user2_id:
+        if current_user_id != friendship.user1_id and current_user_id != friendship.user2_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
 
         friendship.status = FriendshipStatus.REJECTED
-        friendship.delete()
+        try:
+            friendship.delete()
+        except SQLAlchemyError:
+            logger.exception('DB error deleting friendship')
+            return {'message': 'Database error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
         return friendship, HTTPStatus.OK

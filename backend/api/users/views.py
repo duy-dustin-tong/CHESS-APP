@@ -2,6 +2,10 @@
 from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.exceptions import NotFound
+from sqlalchemy.exc import IntegrityError
+import logging
+
 from ..models.users import User
 from ..models.games import Game
 from ..models.elo import EloEntry
@@ -10,6 +14,10 @@ from werkzeug.security import generate_password_hash
 from ..models.friendships import Friendship
 from ..models.friendships import FriendshipStatus
 from ..models.moves import Move
+from ..utils import db
+from sqlalchemy import func
+
+logger = logging.getLogger(__name__)
 
 
 users_namespace = Namespace('users', description = "namespace for users")
@@ -47,19 +55,17 @@ class UserInfoAndStatus(Resource):
     
     def get(self, user_id):
         """ get user info and status """
-
         try:
             user = User.get_by_id(user_id)
 
-
             in_game = Game.query.filter(
                 ((Game.white_user_id == user.id) | (Game.black_user_id == user.id)) &
-                (Game.in_progress == True) 
+                (Game.in_progress == True)
             ).first() is not None
 
             elo_entry = EloEntry.query.filter_by(user_id=user.id).order_by(EloEntry.created_at.desc()).first()
             elo = elo_entry.elo if elo_entry else 'N/A'
-            
+
             return {
                 'id': user.id,
                 'username': user.username,
@@ -67,8 +73,11 @@ class UserInfoAndStatus(Resource):
                 'in_game': in_game,
                 'elo': elo
             }, HTTPStatus.OK
-        except:
+        except NotFound:
             return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
+        except Exception as e:
+            logger.exception('Unexpected error in UserInfoAndStatus.get')
+            return {'message': 'Internal server error'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
 
         
@@ -86,23 +95,27 @@ class UserInfoAndStatus(Resource):
 
         try:
             user = User.get_by_id(user_id)
+        except NotFound:
+            return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
+
+        try:
+            if 'username' in data:
+                user.username = data['username']
+            if 'email' in data:
+                user.email = data['email']
+            if 'password' in data:
+                user.password_hash = generate_password_hash(data['password'])
 
             try:
-                if 'username' in data:
-                    user.username = data['username']
-                if 'email' in data:
-                    user.email = data['email']
-                if 'password' in data:
-                    user.password_hash = generate_password_hash(data['password'])  # In real implementation, hash the password
-
                 user.save()
+            except IntegrityError as ie:
+                logger.exception('Integrity error updating user')
+                return {'message': 'Username or email already taken'}, HTTPStatus.CONFLICT
 
-                return {'message': 'User updated successfully'}, HTTPStatus.OK
-            except Exception as e:
-                return {'message': 'Failed to update user', 'error': str(e)}, HTTPStatus.BAD_REQUEST
-
-        except:
-            return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
+            return {'message': 'User updated successfully'}, HTTPStatus.OK
+        except Exception as e:
+            logger.exception('Failed to update user')
+            return {'message': 'Failed to update user', 'error': str(e)}, HTTPStatus.BAD_REQUEST
 
 
     @jwt_required()
@@ -115,10 +128,15 @@ class UserInfoAndStatus(Resource):
 
         try:
             user = User.get_by_id(user_id)
+        except NotFound:
+            return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
+
+        try:
             user.delete()
             return {'message': 'User deleted successfully'}, HTTPStatus.OK
-        except:
-            return {'message': 'User not found'}, HTTPStatus.NOT_FOUND
+        except Exception as e:
+            logger.exception('Failed to delete user')
+            return {'message': 'Failed to delete user'}, HTTPStatus.INTERNAL_SERVER_ERROR
 
 @users_namespace.route('/users/<int:user_id>/friends')
 class GetFriendsOfUser(Resource):
@@ -126,26 +144,66 @@ class GetFriendsOfUser(Resource):
 
     def get(self, user_id):
         """ get json list of friends of user with user_id"""
-        
-        friendListFetch = Friendship.query.filter(
+        limit = request.args.get('limit', type=int)
+        offset = request.args.get('offset', type=int)
+
+        # Base query for accepted friendships involving the user
+        base_q = Friendship.query.filter(
             ((Friendship.user1_id == user_id) | (Friendship.user2_id == user_id)) &
             (Friendship.status == FriendshipStatus.ACCEPTED)
-        ).all()
+        ).order_by(Friendship.created_at.desc())
 
+        total_count = base_q.count()
+
+        if offset is not None:
+            base_q = base_q.offset(offset)
+        if limit is not None:
+            base_q = base_q.limit(limit)
+
+        friendListFetch = base_q.all()
+
+        if not friendListFetch:
+            return [], HTTPStatus.OK, {'X-Total-Count': total_count}
+
+        # Determine friend user ids in the same order as friendships
         friendIds = [entry.user1_id if entry.user1_id != user_id else entry.user2_id for entry in friendListFetch]
 
-        if not friendIds:
-            return [], HTTPStatus.OK
+        # Fetch users and elos in bulk to avoid N+1 queries
+        users = User.query.filter(User.id.in_(friendIds)).all()
 
-        friends = User.query.filter(User.id.in_(friendIds)).all()
+        # Map user id -> user object
+        user_by_id = {u.id: u for u in users}
 
-        def get_elo(user_id):
-            elo_entry = EloEntry.query.filter_by(user_id=user_id).order_by(EloEntry.created_at.desc()).first()
-            return elo_entry.elo if elo_entry else 'N/A'  # Default Elo if none found
+        elo_by_user = {}
+        if friendIds:
+            # subquery to get latest created_at per user
+            latest_sq = db.session.query(
+                EloEntry.user_id.label('user_id'),
+                func.max(EloEntry.created_at).label('max_created')
+            ).filter(EloEntry.user_id.in_(friendIds)).group_by(EloEntry.user_id).subquery()
 
+            latest_elos = db.session.query(EloEntry).join(
+                latest_sq,
+                (EloEntry.user_id == latest_sq.c.user_id) & (EloEntry.created_at == latest_sq.c.max_created)
+            ).all()
 
+            for e in latest_elos:
+                elo_by_user[e.user_id] = e.elo
 
-        return [{'id': friend.id, 'username': friend.username, 'elo': get_elo(friend.id)} for friend in friends], HTTPStatus.OK
+        response = []
+        for idx, friendship in enumerate(friendListFetch):
+            fid = friendIds[idx]
+            friend = user_by_id.get(fid)
+            if not friend:
+                continue
+            response.append({
+                'id': friend.id,
+                'friendshipId': friendship.id,
+                'username': friend.username,
+                'elo': elo_by_user.get(friend.id, 'N/A')
+            })
+
+        return response, HTTPStatus.OK, {'X-Total-Count': total_count}
 
 @users_namespace.route('/users/<int:user_id>/friends/pending')
 class GetPendingFriendsRequestsToUser(Resource):
@@ -207,15 +265,37 @@ class GetGameHistoryOfUser(Resource):
 
         all_games = all_games_query.all()
 
+        # Bulk-fetch related data to avoid N+1 queries
+        game_ids = [g.id for g in all_games]
+
+        # Moves grouped by game_id
+        moves_q = Move.query.filter(Move.game_id.in_(game_ids)).order_by(Move.move_number).all() if game_ids else []
+        moves_by_game = {}
+        for m in moves_q:
+            moves_by_game.setdefault(m.game_id, []).append(m.uci)
+
+        # Fetch all involved users in bulk
+        user_ids = set()
+        for g in all_games:
+            user_ids.add(g.white_user_id)
+            user_ids.add(g.black_user_id)
+        users = User.query.filter(User.id.in_(list(user_ids))).all() if user_ids else []
+        username_by_id = {u.id: u.username for u in users}
+
+        # Fetch Elo entries tied to these games (game-specific elos)
+        elo_entries = EloEntry.query.filter(EloEntry.game_id.in_(game_ids)).all() if game_ids else []
+        elo_by_user_game = {}
+        for e in elo_entries:
+            elo_by_user_game[(e.user_id, e.game_id)] = e.elo
+
         all_games_formatted = []
         for game in all_games:
-            moves = [move.uci for move in Move.get_moves_by_game_id(game.id)]
-            white_username = User.get_by_id(game.white_user_id).username
-            black_username = User.get_by_id(game.black_user_id).username
-            white_elo_entry = EloEntry.query.filter_by(user_id=game.white_user_id, game_id=game.id).first()
-            black_elo_entry = EloEntry.query.filter_by(user_id=game.black_user_id, game_id=game.id).first()
-            white_elo = white_elo_entry.elo if white_elo_entry else None
-            black_elo = black_elo_entry.elo if black_elo_entry else None
+            moves = moves_by_game.get(game.id, [])
+            white_username = username_by_id.get(game.white_user_id)
+            black_username = username_by_id.get(game.black_user_id)
+            white_elo = elo_by_user_game.get((game.white_user_id, game.id))
+            black_elo = elo_by_user_game.get((game.black_user_id, game.id))
+
             game_data = {
                 'id': game.id,
                 'in_progress': game.in_progress,
@@ -246,20 +326,39 @@ class SearchUsers(Resource):
         if q == '':
             return {'message': 'Query parameter q required'}, HTTPStatus.BAD_REQUEST
 
-        query = User.query.filter(User.username.ilike(f"{q}%")).order_by(User.username.asc())
+        base_q = User.query.filter(User.username.ilike(f"{q}%")).order_by(User.username.asc())
+
+        total_count = base_q.count()
 
         if offset is not None:
-            query = query.offset(offset)
+            base_q = base_q.offset(offset)
         if limit is not None:
-            query = query.limit(limit)
+            base_q = base_q.limit(limit)
 
-        users = query.all()
+        users = base_q.all()
+
         result = []
-        for u in users:
-            elo_entry = EloEntry.query.filter_by(user_id=u.id).order_by(EloEntry.created_at.desc()).first()
-            result.append({'id': u.id, 'username': u.username, 'elo': elo_entry.elo if elo_entry else 'N/A'})
+        user_ids = [u.id for u in users]
 
-        return result, HTTPStatus.OK
+        elo_by_user = {}
+        if user_ids:
+            latest_sq = db.session.query(
+                EloEntry.user_id.label('user_id'),
+                func.max(EloEntry.created_at).label('max_created')
+            ).filter(EloEntry.user_id.in_(user_ids)).group_by(EloEntry.user_id).subquery()
+
+            latest_elos = db.session.query(EloEntry).join(
+                latest_sq,
+                (EloEntry.user_id == latest_sq.c.user_id) & (EloEntry.created_at == latest_sq.c.max_created)
+            ).all()
+
+            for e in latest_elos:
+                elo_by_user[e.user_id] = e.elo
+
+        for u in users:
+            result.append({'id': u.id, 'username': u.username, 'elo': elo_by_user.get(u.id, 'N/A')})
+
+        return result, HTTPStatus.OK, {'X-Total-Count': total_count}
 
 
 
