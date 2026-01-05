@@ -2,7 +2,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom"; 
 import socket from "../api/sockets";
-import api from "../api/api";
 import StatusMessage from '../components/StatusMessage';
 import Button from '../components/Button';
 import useMatchmaking from '../hooks/useMatchmaking';

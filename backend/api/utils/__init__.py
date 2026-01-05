@@ -35,23 +35,6 @@ def handle_connect(auth):
         raise ConnectionRefusedError('invalid token')
 
 
-@socketio.on('register_user')
-def on_register(data):
-    user_id = data.get('userId')
-    if user_id:
-        room_name = f"user_{user_id}"
-        join_room(room_name)
-        logger.info("Socket: User %s joined room %s", user_id, room_name)
-
-
-@socketio.on('deregister_user')
-def on_deregister(data):
-    user_id = data.get('userId')
-    if user_id:
-        room_name = f"user_{user_id}"
-        leave_room(room_name)
-        logger.info("Socket: User %s left room %s", user_id, room_name)
-
 
 @socketio.on('join_game')
 def on_join_game(data):

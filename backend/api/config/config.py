@@ -31,7 +31,9 @@ class DevConfig(Config):
     SECRET_KEY = config('SECRET_KEY', default='dev-secret')
     JWT_SECRET_KEY = config('JWT_SECRET_KEY', default='dev-jwt-secret')
     SQLALCHEMY_ECHO = True
-    SQLALCHEMY_DATABASE_URI = f'sqlite:///{os.path.join(BASE_DIR, "db.sqlite3")}'
+    # Allow using a Postgres database in development by setting DATABASE_URL,
+    # otherwise fall back to the bundled sqlite file for quick local runs.
+    SQLALCHEMY_DATABASE_URI = config('DATABASE_URL', default=f'sqlite:///{os.path.join(BASE_DIR, "db.sqlite3")}')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 class TestConfig(Config):

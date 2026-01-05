@@ -2,7 +2,8 @@
 import axios from 'axios';
 import { recreateSocket } from './sockets';
 
-const baseURL = 'http://127.0.0.1:5000/';
+const rawBase = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
+const baseURL = rawBase.replace(/\/$/, '');
 
 const api = axios.create({
   baseURL: baseURL,
