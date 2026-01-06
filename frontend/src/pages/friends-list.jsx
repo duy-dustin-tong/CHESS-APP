@@ -41,12 +41,12 @@ export default function FriendsList() {
         }
     };
 
-    const removeFriend = async (friendId) => {
+    const removeFriend = async (friendshipId) => {
         if (!window.confirm("Are you sure you want to remove this friend?")) return;
         try {
-            // This assumes your friendship delete endpoint uses the user IDs
-            // Replace with your specific friendship ID logic if needed
-            await api.delete(`/friendships/friendships/${friendId}`); 
+            // The users list returns a `friendshipId` for each friend entry.
+            // Use that ID to delete the friendship record on the backend.
+            await api.delete(`/friendships/friendships/${friendshipId}`);
             // refresh paginated list
             refresh();
         } catch (error) {
@@ -114,7 +114,15 @@ export default function FriendsList() {
             {!loading && friends.length === 0 && <p>You haven't added any friends yet.</p>}
             <ul style={{ listStyle: 'none', padding: 0 }}>
                 {friends.map((friend) => (
-                    <UserListItem key={friend.id} user={friend} showElo actions={[{ label: 'Challenge', variant: 'plain', onClick: () => sendChallenge(friend.id) }, { label: '🗑️', variant: 'plain', onClick: () => removeFriend(friend.id) }]} />
+                    <UserListItem
+                        key={friend.id}
+                        user={friend}
+                        showElo
+                        actions={[
+                            { label: 'Challenge', variant: 'plain', onClick: () => sendChallenge(friend.id) },
+                            { label: '🗑️', variant: 'plain', onClick: () => removeFriend(friend.friendshipId) }
+                        ]}
+                    />
                 ))}
             </ul>
             {hasMore && <Button onClick={loadMore}>Load more</Button>}
