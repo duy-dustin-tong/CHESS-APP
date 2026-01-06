@@ -2,6 +2,7 @@
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restx import Namespace, Resource, fields
 from flask import request
+from werkzeug.exceptions import BadRequest
 from http import HTTPStatus
 import random
 
@@ -26,8 +27,21 @@ class CreateDeleteChallenge(Resource):
     def post(self):
         """challenge a friend"""
         data = request.get_json()
-        user1_id = data.get('user1_id')
-        user2_id = data.get('user2_id')
+
+        # validate JSON payload
+        if not isinstance(data, dict):
+            raise BadRequest('Invalid JSON payload.')
+
+        required_fields = ['user1_id', 'user2_id']
+        missing = [f for f in required_fields if f not in data or data.get(f) in (None, '')]
+        if missing:
+            raise BadRequest(f"Missing or empty fields: {', '.join(missing)}")
+
+        try:
+            user1_id = int(data.get('user1_id'))
+            user2_id = int(data.get('user2_id'))
+        except (TypeError, ValueError):
+            raise BadRequest('user1_id and user2_id must be integers.')
 
         user_id = int(get_jwt_identity())
         if user_id != user1_id:

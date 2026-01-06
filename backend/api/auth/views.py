@@ -42,6 +42,15 @@ class SignUp(Resource):
         """user sign up"""
         data = request.get_json()
 
+        # validate JSON payload
+        if not isinstance(data, dict):
+            raise BadRequest('Invalid JSON payload.')
+
+        required_fields = ['username', 'email', 'password']
+        missing = [f for f in required_fields if not data.get(f)]
+        if missing:
+            raise BadRequest(f"Missing or empty fields: {', '.join(missing)}")
+
         try:
             new_user = User(
                 username=data['username'],
@@ -68,6 +77,16 @@ class LogIn(Resource):
     def post(self):
         """user log in"""
         data = request.get_json()
+
+        # validate JSON payload
+        if not isinstance(data, dict):
+            raise BadRequest('Invalid JSON payload.')
+
+        required_fields = ['email', 'password']
+        missing = [f for f in required_fields if not data.get(f)]
+        if missing:
+            raise BadRequest(f"Missing or empty fields: {', '.join(missing)}")
+
         email = data.get('email')
         password = data.get('password')
 

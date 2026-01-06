@@ -3,6 +3,7 @@ from flask_restx import Resource, Namespace, fields
 from http import HTTPStatus
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import request
+from werkzeug.exceptions import BadRequest
 
 from ..models.users import User
 from ..models.games import Game
@@ -369,7 +370,29 @@ class RespondDraw(Resource):
         """accept a draw"""
 
         data = request.get_json()
-        accepted = data.get('accepted')
+
+        # validate JSON payload
+        if not isinstance(data, dict):
+            raise BadRequest('Invalid JSON payload.')
+
+        # support either 'accepted' or 'accept' keys (model uses 'accept')
+        if 'accepted' in data:
+            accepted = data.get('accepted')
+        elif 'accept' in data:
+            accepted = data.get('accept')
+        else:
+            raise BadRequest("Missing required boolean field: 'accepted' or 'accept'.")
+
+        # coerce/validate boolean
+        if isinstance(accepted, bool):
+            pass
+        elif isinstance(accepted, str):
+            if accepted.lower() in ('true', 'false'):
+                accepted = accepted.lower() == 'true'
+            else:
+                raise BadRequest("Field 'accepted' must be a boolean.")
+        else:
+            raise BadRequest("Field 'accepted' must be a boolean.")
 
         game = Game.get_by_id(game_id)
         if not game:

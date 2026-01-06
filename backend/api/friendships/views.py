@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy.exc import IntegrityError
 from ..models.friendships import Friendship, FriendshipStatus
 from sqlalchemy.exc import SQLAlchemyError
-from werkzeug.exceptions import NotFound
+from werkzeug.exceptions import NotFound, BadRequest
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,16 +28,21 @@ class CreateAnEntry(Resource):
     def post(self):
         """create a friendship entry"""
         data = request.get_json()
+
+        # validate JSON payload
+        if not isinstance(data, dict):
+            raise BadRequest('Invalid JSON payload.')
+
         user1_id = data.get('user1_id')
         user2_id = data.get('user2_id')
         # basic validation
         if user1_id is None or user2_id is None:
-            return {'message': 'Both user1_id and user2_id are required'}, HTTPStatus.BAD_REQUEST
+            raise BadRequest('Both user1_id and user2_id are required')
         try:
             user1_id = int(user1_id)
             user2_id = int(user2_id)
         except (TypeError, ValueError):
-            return {'message': 'Invalid user ids'}, HTTPStatus.BAD_REQUEST
+            raise BadRequest('Invalid user ids')
 
         if user1_id == user2_id:
             return {'message': 'Cannot befriend yourself'}, HTTPStatus.BAD_REQUEST
