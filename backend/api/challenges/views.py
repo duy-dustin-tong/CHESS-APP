@@ -3,6 +3,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from flask_restx import Namespace, Resource, fields
 from flask import request
 from http import HTTPStatus
+import random
 
 from ..models.users import User
 from ..models.challenges import Challenge
@@ -29,10 +30,10 @@ class CreateDeleteChallenge(Resource):
         user2_id = data.get('user2_id')
 
         user_id = int(get_jwt_identity())
-        if user_id != user1_id and user_id != user2_id:
+        if user_id != user1_id:
             return {'message': 'Unauthorized'}, HTTPStatus.UNAUTHORIZED
 
-        friend_id = user2_id if user_id == user1_id else user1_id
+        friend_id = user2_id 
         friendship_status = Friendship.query.filter(
             ((Friendship.user1_id == user_id) & (Friendship.user2_id == friend_id)) |
             ((Friendship.user1_id == friend_id) & (Friendship.user2_id == user_id))
@@ -41,7 +42,7 @@ class CreateDeleteChallenge(Resource):
         if not friendship_status or friendship_status.status != FriendshipStatus.ACCEPTED:
             return {'message': 'You are not friends with this user'}, HTTPStatus.BAD_REQUEST
         
-        #check if friend is in another game
+        #check if friend or you is in another game
         ongoing_game = Game.query.filter(
             ((Game.white_user_id == friend_id) | (Game.black_user_id == friend_id) | (Game.white_user_id == user_id) | (Game.black_user_id == user_id)) &
             (Game.in_progress == True)
@@ -140,11 +141,17 @@ class RespondChallenge(Resource):
         if response == 'accept':
             # Logic to create a game can be added here
 
+
+            white_id = challenge.user1_id
+            black_id = challenge.user2_id
+            
+            if random.choice([True, False]):
+                white_id, black_id = black_id, white_id
             
 
             new_game = Game(
-                white_user_id=challenge.user1_id,
-                black_user_id=challenge.user2_id,
+                white_user_id=white_id, 
+                black_user_id=black_id,
                 in_progress=True
             )
 
