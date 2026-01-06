@@ -29,10 +29,6 @@ class Friendship(db.Model):
         return f"Friendship {self.id} | Requester: {self.user1_id} | Addressee: {self.user2_id} | Status: {self.status.value}"
 
     def save(self):
-        # Normalize ordering so (user1_id, user2_id) is consistent for uniqueness
-        if self.user1_id and self.user2_id and self.user1_id > self.user2_id:
-            self.user1_id, self.user2_id = self.user2_id, self.user1_id
-
         db.session.add(self)
         try:
             db.session.commit()
